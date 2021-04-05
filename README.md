@@ -102,6 +102,12 @@ mkdir -p stdout
 sbatch -W write_partition.sh $STORE
 ```
 
+Submitting the full task as is then as simple as:
+
+```
+bash write_zarr.sh
+```
+
 ## Motivation
 
 It is not always advantageous to let all computations be controlled by a single
