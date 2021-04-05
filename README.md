@@ -76,11 +76,9 @@ echo "My SLURM_ARRAY_TASK_ID is $SLURM_ARRAY_TASK_ID."
 
 STORE=$1
 RANKS=16
+RANK=$SLURM_ARRAY_TASK_ID
 
-python write_partition.py \
-       $STORE \
-       $RANKS \
-       $SLURM_ARRAY_TASK_ID
+python write_partition.py $STORE $RANKS $RANK
 ```
 
 And we call this one `write_zarr.sh`:
@@ -116,7 +114,7 @@ manage a large number of memory-intensive tasks, often leading to slowdowns or
 out of memory errors (see [this
 issue](https://github.com/dask/distributed/issues/2602) for more discussion).
 Breaking the problem down in the way that `xpartition` does, allows you to gain
-the benefits dask's laziness on each independent process, while working in a
+the benefits of dask's laziness on each independent process, while working in a
 distributed environment.  *In an ideal world we wouldn't need a package like
 this -- we would let dask and dask distributed handle everything -- but in
 practice that does not work perfectly yet.*
