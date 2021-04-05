@@ -103,7 +103,7 @@ sbatch -W write_partition.sh $STORE
 Submitting the full task as is then as simple as:
 
 ```
-bash write_zarr.sh
+bash write_zarr.sh /path/to/store.zarr
 ```
 
 ## Motivation
