@@ -1,7 +1,7 @@
 # xpartition
 
 This is a tool that can make writing large xarray datasets to cohesive zarr
-stores from completely independent processes.
+stores from completely independent processes easier.
 
 ## Usage
 
