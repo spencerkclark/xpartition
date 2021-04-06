@@ -12,7 +12,8 @@ those files lazily -- i.e. opening them into dask-backed arrays -- into a
 single dataset, then you can write contiguous "partitions" of that dataset out
 via independent processes.  A "partition" corresponds to a contiguous group of
 dask "chunks." I.e. it can correspond to one or more chunks across any number
-of dimensions.
+of dimensions.  A key detail is no partition straddles any dask chunks; this
+makes writing from independent processes completely safe.
 
 `xpartition` provides an accessor called `partition` that implements
 `initialize_store` and `write` methods.  The pattern is to have some function
