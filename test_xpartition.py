@@ -145,3 +145,49 @@ def test_dataset_mappable_write(tmpdir, ds, ranks):
 
     result = xr.open_zarr(store)
     xr.testing.assert_identical(result, ds)
+
+
+@pytest.mark.parametrize("has_coord", [True, False])
+def test_PartitionMapper_integration(tmpdir, has_coord):
+    def func(ds):
+        return ds.rename(z="new_name").assign_attrs(dataset_attr="fun")
+
+    ds = xr.Dataset({"z": (["x", "y"], np.ones((5, 10)), {"an": "attr"})},).chunk(
+        {"x": 2}
+    )
+    if has_coord:
+        ds = ds.assign_coords(x=range(5))
+
+    store = str(tmpdir)
+    mapper = ds.z.partition.map(store, ranks=3, dims=["x"], func=func, data=ds)
+    for rank in mapper:
+        mapper.write(rank)
+
+    written = xr.open_zarr(store)
+    xr.testing.assert_identical(func(ds), written)
+
+
+def test_partition_partition():
+    # Partitions have two qualitities which we test using the a data-array that
+    # has all unique values
+    ds = xr.Dataset(
+        {"z": (["x", "y"], np.arange(50).reshape((5, 10)), {"an": "attr"})},
+    ).chunk({"x": 2})
+    arr = ds["z"]
+
+    n = 3
+    regions = arr.partition.partition(n, dims=["x"])
+    assert n == len(regions)
+
+    def to_set(arr):
+        return set(arr.values.ravel().tolist())
+
+    # These are the properties of a partition
+    # 1. sets in a partition are disjoint
+    intersection = set.intersection(*[to_set(arr.isel(region)) for region in regions])
+    assert intersection == set()
+
+    # assert that the values cover the set
+    # 2. the sets cover the original set
+    union = set.union(*[to_set(arr.isel(region)) for region in regions])
+    assert union == to_set(arr)
