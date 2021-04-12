@@ -168,11 +168,9 @@ def test_PartitionMapper_integration(tmpdir, has_coord):
 
 
 def test_partition_partition():
-    # Partitions have two qualitities which we test using the a data-array that
+    # Partitions have two qualities which we test using a DataArray that
     # has all unique values
-    ds = xr.Dataset(
-        {"z": (["x", "y"], np.arange(50).reshape((5, 10)), {"an": "attr"})},
-    ).chunk({"x": 2})
+    ds = xr.Dataset({"z": (["x", "y"], np.arange(50).reshape((5, 10)))}).chunk({"x": 2})
     arr = ds["z"]
 
     n = 3
