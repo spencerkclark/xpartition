@@ -5,14 +5,19 @@ import dask.array
 import numpy as np
 import pandas as pd
 import xarray as xr
+import dataclasses
+import logging
 
-from typing import Callable, Dict, Hashable, List, Sequence, Tuple
+from typing import Callable, Dict, Hashable, List, Sequence, Tuple, Mapping
 
 
 DIMENSION_DIM = "dimension"
 SLICE_BOUND_DIM = "slice_bound"
 SLICE_BOUND_INDEX = pd.Index(["start", "stop"], name=SLICE_BOUND_DIM)
 AUXILLARY_DIMENSIONS = [DIMENSION_DIM, SLICE_BOUND_DIM]
+
+Region = Sequence[Mapping[Hashable, slice]]
+Partition = Sequence[Region]
 
 
 def _chunks_as_data_arrays(da: xr.DataArray) -> xr.Dataset:
@@ -133,7 +138,7 @@ class BlocksAccessor:
     def sizes(self) -> Dict[Hashable, int]:
         return {dim: size for dim, size in zip(self._obj.dims, self.shape)}
 
-    def indexers(self, **kwargs) -> Dict[Hashable, slice]:
+    def indexers(self, **kwargs) -> Region:
         kwargs = _scalars_to_slices(kwargs)
         blocks = self._blocks.isel(**kwargs)
         merged = merge_blocks(blocks, self._obj.dims)
@@ -210,9 +215,24 @@ class PartitionDataArrayAccessor:
             chunk_sizes[dim] = min(size, self._obj.blocks.sizes[dim])
         return chunk_sizes
 
-    def indexers(
-        self, ranks: int, rank: int, dims: Sequence[Hashable]
-    ) -> Dict[Hashable, slice]:
+    def partition(self, ranks, dims) -> Partition:
+        """Compute a ranks-sized partition respecting dask block boundaries
+
+        Parameters
+        ----------
+        ranks : int
+            Total number of ranks available to partition across.
+        dims : Sequence[Hashable]
+            Dimensions to partition among; if a dimension is left out
+            no partitions will be made along that dimension.
+
+        Returns
+        -------
+        a list of disjoint regions whose union is the full coordinate space
+        """
+        return [self.indexers(ranks, rank, dims) for rank in range(ranks)]
+
+    def indexers(self, ranks: int, rank: int, dims: Sequence[Hashable]) -> Region:
         """Partition the dask blocks across the given dims.
 
         Parameters
@@ -253,6 +273,16 @@ class PartitionDataArrayAccessor:
             _write_partition_dataarray, self._obj, store, ranks, dims
         )
 
+    @property
+    def _chunks(self):
+        return {dim: self._obj.chunks[k] for k, dim in enumerate(self._obj.dims)}
+
+    def map(
+        self, store: str, ranks: int, dims: Sequence[Hashable], func, data
+    ) -> "PartitionMapper":
+        plan = _ValidWorkPlan(self, ranks, dims)
+        return PartitionMapper(plan, func, data, store)
+
 
 @xr.register_dataset_accessor("partition")
 class PartitionDatasetAccessor:
@@ -271,3 +301,68 @@ class PartitionDatasetAccessor:
         return functools.partial(
             _write_partition_dataset, self._obj, store, ranks, dims
         )
+
+
+def zeros_like(ds: xr.Dataset, chunks):
+    return xr.zeros_like(ds).chunk(chunks)
+
+
+class _ValidWorkPlan:
+    """A mapping between input and output partitionings that will
+    avoid race conditions in parallel jobs
+    """
+
+    def __init__(self, partitioner, ranks: int, dims: Sequence[Hashable]):
+
+        self._partitioner = partitioner
+        self._ranks = ranks
+        self.dims = dims
+
+    @property
+    def output_chunks(self):
+        return {dim: self._partitioner._chunks[dim] for dim in self.dims}
+
+    @property
+    def input_partition(self):
+        return self._partitioner.partition(self._ranks, self.dims)
+
+
+@dataclasses.dataclass
+class PartitionMapper:
+    """Evaluate a function on each region of a partition and store the output
+    to a zarr store
+    """
+
+    plan: _ValidWorkPlan
+    func: Callable[[xr.Dataset], xr.Dataset]
+    data: xr.Dataset
+    path: str
+
+    @property
+    def dims(self):
+        return self.plan.dims
+
+    def _initialize_store(self):
+        region = self.plan.input_partition[0]
+        iData = self.data.isel(region)
+        iOut = self.func(iData)
+        full_indexers = {dim: self.data[dim] for dim in self.dims}
+
+        dims_without_coords = (set(iOut.dims) - set(iOut.indexes)) & set(self.dims)
+        for dim in dims_without_coords:
+            iOut = iOut.assign_coords({dim: iOut[dim]})
+
+        schema = zeros_like(iOut.reindex(full_indexers), chunks=self.plan.output_chunks)
+        schema = schema.drop_vars(dims_without_coords)
+        schema.partition.initialize_store(self.path)
+
+    def write(self, rank):
+        logging.info(f"Writing {rank + 1} of {len(self.plan.input_partition)}")
+        region = self.plan.input_partition[rank]
+        iData = self.data.isel(region)
+        iOut = self.func(iData)
+        iOut.to_zarr(self.path, region=region)
+
+    def __iter__(self):
+        self._initialize_store()
+        return iter(range(len(self.plan.input_partition)))
