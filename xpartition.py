@@ -11,6 +11,9 @@ import logging
 from typing import Callable, Dict, Hashable, List, Sequence, Tuple, Mapping
 
 
+__version__ = "0.1.0"
+
+
 DIMENSION_DIM = "dimension"
 SLICE_BOUND_DIM = "slice_bound"
 SLICE_BOUND_INDEX = pd.Index(["start", "stop"], name=SLICE_BOUND_DIM)
