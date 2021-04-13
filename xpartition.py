@@ -11,7 +11,7 @@ import logging
 from typing import Callable, Dict, Hashable, List, Sequence, Tuple, Mapping
 
 
-__version__ = "0.1.0"
+__version__ = "0.0.0"
 
 
 DIMENSION_DIM = "dimension"
