@@ -323,8 +323,22 @@ class PartitionDatasetAccessor:
         )
 
 
+def zeros_like_dataarray(arr, chunks):
+    dask_chunks = {
+        arr.get_axis_num(dim): size for dim, size in chunks.items() if dim in arr.dims
+    }
+    return xr.apply_ufunc(
+        dask.array.zeros_like, arr, kwargs=dict(chunks=dask_chunks), dask="allowed"
+    )
+
+
 def zeros_like(ds: xr.Dataset, chunks):
-    return xr.zeros_like(ds).chunk(chunks)
+    """Performant implementation of zeros_like with a given chunk size
+
+    xr.zeros_like(ds).chunk(chunks) is very slow for datasets with many
+    changes.
+    """
+    return ds.apply(zeros_like_dataarray, chunks=chunks, keep_attrs=True)
 
 
 class _ValidWorkPlan:
