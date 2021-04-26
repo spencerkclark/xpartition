@@ -171,6 +171,20 @@ def _write_partition_dataset(
             da.partition.write(store, ranks, partition_dims, rank)
 
 
+class Map(Sequence):
+    """Lazy sequence"""
+
+    def __init__(self, func, seq):
+        self.seq = seq
+        self.func = func
+
+    def __getitem__(self, i):
+        return self.func(self.seq[i])
+
+    def __len__(self):
+        return len(self.seq)
+
+
 @xr.register_dataarray_accessor("partition")
 class PartitionDataArrayAccessor:
     def __init__(self, xarray_obj):
@@ -233,7 +247,10 @@ class PartitionDataArrayAccessor:
         -------
         a list of disjoint regions whose union is the full coordinate space
         """
-        return [self.indexers(ranks, rank, dims) for rank in range(ranks)]
+        return Map(functools.partial(self._indexers, ranks, dims), list(range(ranks)))
+
+    def _indexers(self, ranks, dims, rank):
+        return self.indexers(ranks, rank, dims)
 
     def indexers(self, ranks: int, rank: int, dims: Sequence[Hashable]) -> Region:
         """Partition the dask blocks across the given dims.
