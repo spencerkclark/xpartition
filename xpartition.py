@@ -183,7 +183,9 @@ class PartitionDataArrayAccessor:
     def _meta_array(self, chunks: Dict[Hashable, int]) -> xr.DataArray:
         dummy_data = dask.array.zeros(self._obj.blocks.shape)
         da = xr.DataArray(dummy_data, dims=self._obj.dims, name="blocks")
-        return da.chunk(chunks)
+        return da.chunk(
+            chunks
+        )
 
     def _optimal_meta_chunk_sizes(
         self, ranks: int, dims: Sequence[Hashable]
