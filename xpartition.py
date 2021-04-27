@@ -84,7 +84,7 @@ class BlocksAccessor:
     def indexers(self, **kwargs) -> Region:
         _validate_indexers(kwargs, self.sizes)
         block_indexers = _convert_scalars_to_slices(kwargs)
-        return _convert_block_indexers_to_array_indexers(block_indexers, self.chunks)
+        return _convert_block_indexers_to_array_indexers(block_indexers, self._chunks)
 
     def isel(self, **kwargs) -> xr.DataArray:
         slices = self.indexers(**kwargs)
