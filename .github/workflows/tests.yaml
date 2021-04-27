@@ -28,15 +28,18 @@ jobs:
         conda env create --file ci/environment.yaml
         source activate test
         pip install -v -e . --no-deps
+
     - name: Environment information
       run: |
         source activate test
         conda info --all
         conda list
+
     - name: Run tests
       run: |
         source activate test
         pytest -vv --cov-report=xml
+
     - name: Upload code coverage to Codecov
       uses: codecov/codecov-action@v1
       with:
@@ -44,53 +47,3 @@ jobs:
         flags: unittests,${{ matrix.python-version }}
         name: codecov-umbrella
         fail_ci_if_error: false
-  
-  black:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        python-version: ["3.9"]
-        os: [ubuntu-latest]
-        platform: [x64]
-
-    steps:
-    - uses: actions/checkout@v2
-    - name: Setup conda
-      uses: s-weigand/setup-conda@v1
-      with:
-        activate-conda: false
-        conda-channels: conda-forge
-        python-version: ${{ matrix.python-version }}
-    
-    - name: Install black
-      run: conda create --name black python=${{ matrix.python-version }} black
-
-    - name: black --check
-      run: |
-        source activate black
-        black --check xpartition.py test_xpartition.py
-  
-  flake8:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        python-version: ["3.9"]
-        os: [ubuntu-latest]
-        platform: [x64]
-
-    steps:
-    - uses: actions/checkout@v2
-    - name: Setup conda
-      uses: s-weigand/setup-conda@v1
-      with:
-        activate-conda: false
-        conda-channels: conda-forge
-        python-version: ${{ matrix.python-version }}
-        
-    - name: Install flake8
-      run: conda create --name flake8 python=${{ matrix.python-version }} flake8
-
-    - name: flake8
-      run: |
-        source activate flake8
-        flake8
