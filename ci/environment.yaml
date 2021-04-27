@@ -2,9 +2,7 @@ name: test
 channels:
     - conda-forge
 dependencies:
-    - black
     - dask
-    - flake8
     - xarray
     - zarr
     - pip
