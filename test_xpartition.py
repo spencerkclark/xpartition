@@ -6,7 +6,52 @@ import pytest
 import numpy as np
 import xarray as xr
 
-import xpartition  # noqa: F401
+import xpartition
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [(1, True), (np.int32(1), True), (2.0, False), (np.float32(2), False)],
+)
+def test__is_integer(value, expected):
+    result = xpartition._is_integer(value)
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    ("indexers", "exception"),
+    [
+        ({"x": 0}, None),
+        ({"x": 4}, None),
+        ({"x": -4}, None),
+        ({"x": 5}, IndexError),
+        ({"x": -5}, IndexError),
+        ({"x": 2.0}, ValueError),
+        ({"y": 0}, KeyError),
+    ],
+    ids=lambda x: f"{x}",
+)
+def test__validate_indexers(indexers, exception):
+    sizes = {"x": 5}
+    if exception is not None:
+        with pytest.raises(exception):
+            xpartition._validate_indexers(indexers, sizes)
+    else:
+        xpartition._validate_indexers(indexers, sizes)
+
+
+@pytest.mark.parametrize(
+    ("indexers", "expected"),
+    [
+        ({"x": 5}, {"x": slice(5, 6)}),
+        ({"x": -5}, {"x": slice(-5, -4)}),
+        ({"x": slice(0, 2), "y": 5}, {"x": slice(0, 2), "y": slice(5, 6)}),
+    ],
+    ids=lambda x: f"{x}",
+)
+def test__convert_scalars_to_slices(indexers, expected):
+    result = xpartition._convert_scalars_to_slices(indexers)
+    assert result == expected
 
 
 def _construct_dataarray(shape, chunks, name):
