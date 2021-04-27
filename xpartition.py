@@ -250,6 +250,7 @@ class PartitionDataArrayAccessor:
         return Map(functools.partial(self._indexers, ranks, dims), list(range(ranks)))
 
     def _indexers(self, ranks, dims, rank):
+        """Needed for creating a partial function within the partition method."""
         return self.indexers(ranks, rank, dims)
 
     def indexers(self, ranks: int, rank: int, dims: Sequence[Hashable]) -> Region:
