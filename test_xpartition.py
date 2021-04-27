@@ -152,7 +152,7 @@ def test_PartitionMapper_integration(tmpdir, has_coord):
     def func(ds):
         return ds.rename(z="new_name").assign_attrs(dataset_attr="fun")
 
-    ds = xr.Dataset({"z": (["x", "y"], np.ones((5, 10)), {"an": "attr"})},).chunk(
+    ds = xr.Dataset({"z": (["x", "y"], np.ones((5, 10)), {"an": "attr"})}).chunk(
         {"x": 2}
     )
     if has_coord:
