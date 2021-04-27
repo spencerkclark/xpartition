@@ -3,12 +3,11 @@ import math
 
 import dask.array
 import numpy as np
-import pandas as pd
 import xarray as xr
 import dataclasses
 import logging
 
-from typing import Callable, Dict, Hashable, List, Sequence, Tuple, Mapping
+from typing import Callable, Dict, Hashable, Sequence, Tuple, Mapping
 
 
 __version__ = "0.1.0"
@@ -18,16 +17,47 @@ Region = Sequence[Mapping[Hashable, slice]]
 Partition = Sequence[Region]
 
 
-def _scalars_to_slices(kwargs):
+def _is_integer(value):
+    """Check if a value is a Python or NumPy integer instance."""
+    return isinstance(value, (int, np.integer))
+
+
+def _convert_scalars_to_slices(kwargs):
+    """Convert a set of xarray dimension-index pairs to solely use slices."""
     result = {}
     for k, v in kwargs.items():
         if isinstance(v, slice):
             result[k] = v
-        elif isinstance(v, (int, np.integer)):
+        elif _is_integer(v):
             result[k] = slice(v, v + 1)
         else:
             raise ValueError(f"Invalid indexer provided for dim {k}: {v}.")
     return result
+
+
+def _validate_indexers(kwargs, sizes):
+    """Check that indexers for an array with given sizes are valid."""
+    for k, v in kwargs.items():
+        if k not in sizes:
+            raise KeyError(f"Dimension {k!r} is not a valid dimension.")
+        elif _is_integer(v):
+            if abs(v) > sizes[k] - 1:
+                raise IndexError(
+                    f"Index {v} is out of bounds for dimension {k!r} of length {sizes[k]}."
+                )
+        else:
+            if not isinstance(v, slice):
+                raise ValueError(f"Invalid indexer provided for dim {k!r}: {v}.")
+
+
+def _convert_block_indexers_to_array_indexers(kwargs, chunks):
+    """Convert a set of dask block indexers to array indexers."""
+    slices = {}
+    for dim, indexer in kwargs.items():
+        start = sum(chunks[dim][: indexer.start])
+        stop = sum(chunks[dim][: indexer.stop])
+        slices[dim] = slice(start, stop)
+    return slices
 
 
 @xr.register_dataarray_accessor("blocks")
@@ -39,23 +69,8 @@ class BlocksAccessor:
                 "The blocks accessor is only valid for dask-backed arrays."
             )
 
-    def _validate_block_indices(self, **kwargs):
-        """Check that the indices provided correspond to a valid block."""
-        for dim, index in kwargs.items():
-            if dim not in self.sizes:
-                raise KeyError(
-                    f"Dimension {dim!r} is not a dimension of this DataArray."
-                )
-            if isinstance(index, (int, np.integer)):
-                if index > self.sizes[dim] - 1:
-                    raise IndexError(
-                        f"Index {index} is out of bounds for dimension {dim!r} of length {self.sizes[dim]}."
-                    )
-            elif not isinstance(index, slice):
-                raise ValueError(f"Index {index} is not a valid indexer.")
-
     @property
-    def _chunks(self):
+    def _chunks(self) -> Dict[Hashable, Tuple[int, ...]]:
         return {dim: self._obj.chunks[k] for k, dim in enumerate(self._obj.dims)}
 
     @property
@@ -67,14 +82,9 @@ class BlocksAccessor:
         return {dim: size for dim, size in zip(self._obj.dims, self.shape)}
 
     def indexers(self, **kwargs) -> Region:
-        self._validate_block_indices(**kwargs)
-        kwargs = _scalars_to_slices(kwargs)
-        slices = {}
-        for dim, indexer in kwargs.items():
-            start = sum(self._chunks[dim][: indexer.start])
-            stop = sum(self._chunks[dim][: indexer.stop])
-            slices[dim] = slice(start, stop)
-        return slices
+        _validate_indexers(kwargs, self.sizes)
+        block_indexers = _convert_scalars_to_slices(kwargs)
+        return _convert_block_indexers_to_array_indexers(block_indexers, self.chunks)
 
     def isel(self, **kwargs) -> xr.DataArray:
         slices = self.indexers(**kwargs)

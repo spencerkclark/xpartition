@@ -6,7 +6,7 @@ import pytest
 import numpy as np
 import xarray as xr
 
-import xpartition
+import xpartition  # noqa: F401
 
 
 def _construct_dataarray(shape, chunks, name):
