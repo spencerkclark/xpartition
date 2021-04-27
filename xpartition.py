@@ -425,6 +425,7 @@ class PartitionMapper:
         iData = self.data.isel(region)
         iOut = self.func(iData)
         iOut.to_zarr(self.path, region=region)
+        logging.info(f"Done writing {rank + 1}.")
 
     def __iter__(self):
         self._initialize_store()
