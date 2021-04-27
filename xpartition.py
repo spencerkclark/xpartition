@@ -100,6 +100,20 @@ def _write_partition_dataset(
             da.partition.write(store, ranks, partition_dims, rank)
 
 
+class Map(Sequence):
+    """Lazy sequence"""
+
+    def __init__(self, func, seq):
+        self.seq = seq
+        self.func = func
+
+    def __getitem__(self, i):
+        return self.func(self.seq[i])
+
+    def __len__(self):
+        return len(self.seq)
+
+
 @xr.register_dataarray_accessor("partition")
 class PartitionDataArrayAccessor:
     def __init__(self, xarray_obj):
@@ -162,7 +176,11 @@ class PartitionDataArrayAccessor:
         -------
         a list of disjoint regions whose union is the full coordinate space
         """
-        return [self.indexers(ranks, rank, dims) for rank in range(ranks)]
+        return Map(functools.partial(self._indexers, ranks, dims), list(range(ranks)))
+
+    def _indexers(self, ranks, dims, rank):
+        """Needed for creating a partial function within the partition method."""
+        return self.indexers(ranks, rank, dims)
 
     def indexers(self, ranks: int, rank: int, dims: Sequence[Hashable]) -> Region:
         """Partition the dask blocks across the given dims.
@@ -235,8 +253,22 @@ class PartitionDatasetAccessor:
         )
 
 
+def zeros_like_dataarray(arr, chunks):
+    dask_chunks = {
+        arr.get_axis_num(dim): size for dim, size in chunks.items() if dim in arr.dims
+    }
+    return xr.apply_ufunc(
+        dask.array.zeros_like, arr, kwargs=dict(chunks=dask_chunks), dask="allowed"
+    )
+
+
 def zeros_like(ds: xr.Dataset, chunks):
-    return xr.zeros_like(ds).chunk(chunks)
+    """Performant implementation of zeros_like with a given chunk size
+
+    xr.zeros_like(ds).chunk(chunks) is very slow for datasets with many
+    changes.
+    """
+    return ds.apply(zeros_like_dataarray, chunks=chunks, keep_attrs=True)
 
 
 class _ValidWorkPlan:

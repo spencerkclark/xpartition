@@ -1,5 +1,8 @@
 # xpartition
 
+[![Build
+Status](https://github.com/spencerkclark/xpartition/workflows/tests/badge.svg?branch=master)](https://github.com/spencerkclark/xpartition/actions)
+[![codecov](https://codecov.io/gh/spencerkclark/xpartition/branch/main/graph/badge.svg?token=H1DBBSTQ2V)](https://codecov.io/gh/spencerkclark/xpartition)
 [![PyPI](https://img.shields.io/pypi/v/xpartition.svg)](https://pypi.python.org/pypi/xpartition/)
 
 This is a tool that can make writing large xarray datasets to cohesive zarr
