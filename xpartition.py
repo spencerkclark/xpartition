@@ -14,98 +14,8 @@ from typing import Callable, Dict, Hashable, List, Sequence, Tuple, Mapping
 __version__ = "0.1.0"
 
 
-DIMENSION_DIM = "dimension"
-SLICE_BOUND_DIM = "slice_bound"
-SLICE_BOUND_INDEX = pd.Index(["start", "stop"], name=SLICE_BOUND_DIM)
-AUXILLARY_DIMENSIONS = [DIMENSION_DIM, SLICE_BOUND_DIM]
-
 Region = Sequence[Mapping[Hashable, slice]]
 Partition = Sequence[Region]
-
-
-def _chunks_as_data_arrays(da: xr.DataArray) -> xr.Dataset:
-    chunks = da.chunks
-    arrays = []
-    for dim, chunks in zip(da.dims, da.chunks):
-        arrays.append(xr.DataArray(list(chunks), dims=[dim], name=f"{dim}_chunks"))
-    return xr.merge(arrays)
-
-
-def _block_starts(da: xr.DataArray) -> List[xr.DataArray]:
-    chunks_as_data_arrays = _chunks_as_data_arrays(da)
-    stops = _block_stops(da)
-    return [stop - a for stop, a in zip(stops, chunks_as_data_arrays.values())]
-
-
-def _block_stops(da: xr.DataArray) -> List[xr.DataArray]:
-    chunks_as_data_arrays = _chunks_as_data_arrays(da)
-    return [a.cumsum(a.dims) for a in chunks_as_data_arrays.values()]
-
-
-def block_indices(da: xr.DataArray) -> xr.DataArray:
-    """Generate an array of dask array block bounds for a DataArray.
-
-    Parameters
-    ----------
-    da : xr.DataArray
-
-    Returns
-    -------
-    xr.DataArray
-    """
-    starts = _block_starts(da)
-    stops = _block_stops(da)
-    dimension_index = pd.Index(da.dims, name=DIMENSION_DIM)
-    starts = xr.concat(xr.broadcast(*starts), dim=dimension_index)
-    stops = xr.concat(xr.broadcast(*stops), dim=dimension_index)
-    result = xr.concat([starts, stops], dim=SLICE_BOUND_INDEX)
-
-    # Put auxillary dimensions at the end to make it easier to select
-    # contiguous slices.
-    return result.transpose(*dimension_index, ...)
-
-
-def block_to_slices(block: xr.DataArray) -> Dict[Hashable, slice]:
-    """Convert a DataArray representing a single block to a dictionary of slices.
-
-    Parameters
-    ----------
-    block : xr.DataArray
-
-    Returns
-    -------
-    Dictionary mapping dimension names to slices.
-    """
-    slices = {}
-    for dim in block.dimension:
-        start = block.sel({SLICE_BOUND_DIM: "start", DIMENSION_DIM: dim}).item()
-        stop = block.sel({SLICE_BOUND_DIM: "stop", DIMENSION_DIM: dim}).item()
-        slices[dim.item()] = slice(start, stop)
-    return slices
-
-
-def merge_blocks(blocks: xr.DataArray, dims: Sequence[Hashable]):
-    """Merge a DataArray of blocks into a single block.
-
-    Parameters
-    ----------
-    blocks : xr.DataArray
-        An input array of blocks; must have dimensions "slice_bound"
-        and "dimension".
-    dims : Sequence[Hashable]
-        Dimensions to merge blocks along.
-
-    Notes
-    -------
-    Assumes that the input blocks are contiguous.
-
-    Returns
-    -------
-    xr.DataArray for a single merged block.
-    """
-    start = blocks.isel({dim: 0 for dim in dims}).sel({SLICE_BOUND_DIM: "start"})
-    stop = blocks.isel({dim: -1 for dim in dims}).sel({SLICE_BOUND_DIM: "stop"})
-    return xr.concat([start, stop], dim=SLICE_BOUND_INDEX)
 
 
 def _scalars_to_slices(kwargs):
@@ -113,7 +23,7 @@ def _scalars_to_slices(kwargs):
     for k, v in kwargs.items():
         if isinstance(v, slice):
             result[k] = v
-        elif np.issubdtype(v, np.integer):
+        elif isinstance(v, (int, np.integer)):
             result[k] = slice(v, v + 1)
         else:
             raise ValueError(f"Invalid indexer provided for dim {k}: {v}.")
@@ -129,9 +39,24 @@ class BlocksAccessor:
                 "The blocks accessor is only valid for dask-backed arrays."
             )
 
+    def _validate_block_indices(self, **kwargs):
+        """Check that the indices provided correspond to a valid block."""
+        for dim, index in kwargs.items():
+            if dim not in self.sizes:
+                raise KeyError(
+                    f"Dimension {dim!r} is not a dimension of this DataArray."
+                )
+            if isinstance(index, (int, np.integer)):
+                if index > self.sizes[dim] - 1:
+                    raise IndexError(
+                        f"Index {index} is out of bounds for dimension {dim!r} of length {self.sizes[dim]}."
+                    )
+            elif not isinstance(index, slice):
+                raise ValueError(f"Index {index} is not a valid indexer.")
+
     @property
-    def _blocks(self) -> xr.DataArray:
-        return block_indices(self._obj)
+    def _chunks(self):
+        return {dim: self._obj.chunks[k] for k, dim in enumerate(self._obj.dims)}
 
     @property
     def shape(self) -> Tuple[int, ...]:
@@ -142,10 +67,14 @@ class BlocksAccessor:
         return {dim: size for dim, size in zip(self._obj.dims, self.shape)}
 
     def indexers(self, **kwargs) -> Region:
+        self._validate_block_indices(**kwargs)
         kwargs = _scalars_to_slices(kwargs)
-        blocks = self._blocks.isel(**kwargs)
-        merged = merge_blocks(blocks, self._obj.dims)
-        return block_to_slices(merged)
+        slices = {}
+        for dim, indexer in kwargs.items():
+            start = sum(self._chunks[dim][: indexer.start])
+            stop = sum(self._chunks[dim][: indexer.stop])
+            slices[dim] = slice(start, stop)
+        return slices
 
     def isel(self, **kwargs) -> xr.DataArray:
         slices = self.indexers(**kwargs)

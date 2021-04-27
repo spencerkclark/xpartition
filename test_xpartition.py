@@ -44,15 +44,14 @@ def da(request):
     return _construct_dataarray(shape, chunks, name)
 
 
-def test_block_indices(da):
-    blocks = xpartition.block_indices(da)
-    blocks_shape = tuple(blocks.sizes[dim] for dim in da.dims)
-    stacked_blocks = blocks.stack(block=[dim for dim in da.dims])
-    for i in range(stacked_blocks.sizes["block"]):
-        indexers = xpartition.block_to_slices(stacked_blocks.isel(block=i))
-        dask_blocks_indices = np.unravel_index(i, blocks_shape)
-        block_data_via_xarray = da.isel(indexers).data.compute()
-        block_data_via_dask = da.data.blocks[dask_blocks_indices].compute()
+def test_indexers_with_scalars(da):
+    n_blocks = np.product([size for size in da.blocks.sizes.values()])
+    for i in range(n_blocks):
+        block_indices = np.unravel_index(i, da.blocks.shape)
+        block_indexers = {dim: index for dim, index in zip(da.dims, block_indices)}
+        array_indexers = da.blocks.indexers(**block_indexers)
+        block_data_via_xarray = da.isel(array_indexers).data.compute()
+        block_data_via_dask = da.data.blocks[block_indices].compute()
         np.testing.assert_array_equal(block_data_via_xarray, block_data_via_dask)
 
 
@@ -71,7 +70,7 @@ def test_block_indices(da):
     ],
     ids=lambda x: str(x),
 )
-def test_merge_blocks(subset):
+def test_indexers_with_slices(subset):
     shape = (4, 3, 2, 7)
     chunks = (1, 2, 1, 5)
     dims = list(string.ascii_lowercase[: len(shape)])
@@ -79,11 +78,8 @@ def test_merge_blocks(subset):
     data = np.random.random(shape)
     da = xr.DataArray(data, dims=dims, name="foo").chunk(chunks)
 
-    blocks = xpartition.block_indices(da)
-    blocks_subset = blocks.isel(subset)
-    merged_block = xpartition.merge_blocks(blocks_subset, da.dims)
-    merged_block = xpartition.block_to_slices(merged_block)
-    xarray_subset = da.isel(merged_block).data.compute()
+    indexers = da.blocks.indexers(**subset)
+    xarray_subset = da.isel(indexers).data.compute()
     dask_subset = da.data.blocks[tuple(s for s in subset.values())].compute()
 
     np.testing.assert_array_equal(xarray_subset, dask_subset)
@@ -152,7 +148,7 @@ def test_PartitionMapper_integration(tmpdir, has_coord):
     def func(ds):
         return ds.rename(z="new_name").assign_attrs(dataset_attr="fun")
 
-    ds = xr.Dataset({"z": (["x", "y"], np.ones((5, 10)), {"an": "attr"})},).chunk(
+    ds = xr.Dataset({"z": (["x", "y"], np.ones((5, 10)), {"an": "attr"})}).chunk(
         {"x": 2}
     )
     if has_coord:
