@@ -25,7 +25,7 @@ def _is_integer(value):
 def _convert_scalars_to_slices(kwargs):
     """Convert a set of xarray dimension-index pairs to solely use slices.
 
-    Assumes that the index values have be validated already in
+    Assumes that the index values have been validated already in
     _validate_indexers.
 
     Parameters
