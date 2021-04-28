@@ -85,11 +85,11 @@ def _convert_block_indexers_to_array_indexers(kwargs, chunks):
 
     Parameters
     ----------
-    kwargs : dict 
+    kwargs : dict
         Dictionary mapping dimension names to slices.  The slices
         represent slices in dask block space.
     chunks : dict
-        Dictionary mapping dimension names to tuples representing 
+        Dictionary mapping dimension names to tuples representing
         the chunk structure of the given dimension.
 
     Returns
