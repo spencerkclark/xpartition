@@ -123,6 +123,10 @@ def test_indexers_with_scalars(da):
         block_data_via_dask = da.data.blocks[block_indices].compute()
         np.testing.assert_array_equal(block_data_via_xarray, block_data_via_dask)
 
+        # Test obtaining the array through blocks.isel
+        block_data_via_xarray = da.blocks.isel(**block_indexers).data.compute()
+        np.testing.assert_array_equal(block_data_via_xarray, block_data_via_dask)
+
 
 @pytest.mark.parametrize(
     "subset",
@@ -150,7 +154,10 @@ def test_indexers_with_slices(subset):
     indexers = da.blocks.indexers(**subset)
     xarray_subset = da.isel(indexers).data.compute()
     dask_subset = da.data.blocks[tuple(s for s in subset.values())].compute()
+    np.testing.assert_array_equal(xarray_subset, dask_subset)
 
+    # Test obtaining the array through blocks.isel
+    xarray_subset = da.blocks.isel(**subset).data.compute()
     np.testing.assert_array_equal(xarray_subset, dask_subset)
 
 
