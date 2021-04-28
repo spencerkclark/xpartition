@@ -23,7 +23,20 @@ def _is_integer(value):
 
 
 def _convert_scalars_to_slices(kwargs):
-    """Convert a set of xarray dimension-index pairs to solely use slices."""
+    """Convert a set of xarray dimension-index pairs to solely use slices.
+
+    Assumes that the index values have be validated already in
+    _validate_indexers.
+
+    Parameters
+    ----------
+    kwargs : dict
+        Dictionary mapping dimension names to integers or slices.
+
+    Returns
+    -------
+    dict
+    """
     result = {}
     for k, v in kwargs.items():
         if isinstance(v, slice):
@@ -34,7 +47,22 @@ def _convert_scalars_to_slices(kwargs):
 
 
 def _validate_indexers(kwargs, sizes):
-    """Check that indexers for an array with given sizes are valid."""
+    """Check that indexers for an array with given sizes are valid.
+
+    xpartition does not support indexing the blocks with non-contiguous array
+    regions, e.g. with slices that skip elements.  It also does not support
+    indexing with anything other than an integer or slice along a dimension.
+
+    Parameters
+    ----------
+    kwargs : dict Dictionary mapping dimension names to possible indexers. sizes
+        : dict Dictionary mapping dimension names to sizes of the array.
+
+    Raises
+    ------
+    KeyError, IndexError, NotImplementedError, or ValueError depending on the
+    context.
+    """
     for k, v in kwargs.items():
         if k not in sizes:
             raise KeyError(f"Dimension {k!r} is not a valid dimension.")
@@ -53,7 +81,21 @@ def _validate_indexers(kwargs, sizes):
 
 
 def _convert_block_indexers_to_array_indexers(kwargs, chunks):
-    """Convert a set of dask block indexers to array indexers."""
+    """Convert a set of dask block indexers to array indexers.
+
+    Parameters
+    ----------
+    kwargs : dict 
+        Dictionary mapping dimension names to slices.  The slices
+        represent slices in dask block space.
+    chunks : dict
+        Dictionary mapping dimension names to tuples representing 
+        the chunk structure of the given dimension.
+
+    Returns
+    -------
+    dict
+    """
     slices = {}
     for dim, indexer in kwargs.items():
         if indexer.start is None:
