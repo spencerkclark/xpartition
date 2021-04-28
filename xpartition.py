@@ -28,10 +28,8 @@ def _convert_scalars_to_slices(kwargs):
     for k, v in kwargs.items():
         if isinstance(v, slice):
             result[k] = v
-        elif _is_integer(v):
-            result[k] = slice(v, v + 1)
         else:
-            raise ValueError(f"Invalid indexer provided for dim {k}: {v}.")
+            result[k] = slice(v, v + 1)
     return result
 
 
@@ -54,7 +52,10 @@ def _convert_block_indexers_to_array_indexers(kwargs, chunks):
     """Convert a set of dask block indexers to array indexers."""
     slices = {}
     for dim, indexer in kwargs.items():
-        start = sum(chunks[dim][: indexer.start])
+        if indexer.start is None:
+            start = 0
+        else:
+            start = sum(chunks[dim][: indexer.start])
         stop = sum(chunks[dim][: indexer.stop])
         slices[dim] = slice(start, stop)
     return slices

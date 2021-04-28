@@ -54,6 +54,30 @@ def test__convert_scalars_to_slices(indexers, expected):
     assert result == expected
 
 
+@pytest.mark.parametrize(
+    ("block_indexers", "expected"),
+    [
+        ({"x": slice(0, 3)}, {"x": slice(0, 6)}),
+        ({"x": slice(1, 2)}, {"x": slice(2, 5)}),
+        ({"x": slice(-3, -2)}, {"x": slice(0, 2)}),
+        ({"x": slice(-3, -1)}, {"x": slice(0, 5)}),
+        ({"x": slice(-3, None)}, {"x": slice(0, 6)}),
+        ({"x": slice(None, 1)}, {"x": slice(0, 2)}),
+        ({"x": slice(0, 10)}, {"x": slice(0, 6)}),
+        ({"x": slice(-10, None)}, {"x": slice(0, 6)}),
+        ({"x": slice(None, None)}, {"x": slice(0, 6)}),
+        ({"x": slice(10, 12)}, {"x": slice(6, 6)}),
+    ],
+    ids=lambda x: f"{x}",
+)
+def test__convert_block_indexers_to_array_indexers(block_indexers, expected):
+    chunks = {"x": (2, 3, 1)}
+    result = xpartition._convert_block_indexers_to_array_indexers(
+        block_indexers, chunks
+    )
+    assert result == expected
+
+
 def _construct_dataarray(shape, chunks, name):
     dims = list(string.ascii_lowercase[: len(shape)])
     data = np.random.random(shape)
