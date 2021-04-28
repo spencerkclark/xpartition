@@ -55,8 +55,10 @@ def _validate_indexers(kwargs, sizes):
 
     Parameters
     ----------
-    kwargs : dict Dictionary mapping dimension names to possible indexers. sizes
-        : dict Dictionary mapping dimension names to sizes of the array.
+    kwargs : dict
+        Dictionary mapping dimension names to possible indexers.
+    sizes : dict
+        Dictionary mapping dimension names to sizes of the array.
 
     Raises
     ------
