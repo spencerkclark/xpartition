@@ -24,10 +24,13 @@ def test__is_integer(value, expected):
         ({"x": 0}, None),
         ({"x": 4}, None),
         ({"x": -4}, None),
+        ({"x": slice(1, 2)}, None),
+        ({"x": slice(1, 2, 1)}, None),
         ({"x": 5}, IndexError),
         ({"x": -5}, IndexError),
         ({"x": 2.0}, ValueError),
         ({"y": 0}, KeyError),
+        ({"x": slice(1, 2, 5)}, NotImplementedError),
     ],
     ids=lambda x: f"{x}",
 )
@@ -67,6 +70,7 @@ def test__convert_scalars_to_slices(indexers, expected):
         ({"x": slice(-10, None)}, {"x": slice(0, 6)}),
         ({"x": slice(None, None)}, {"x": slice(0, 6)}),
         ({"x": slice(10, 12)}, {"x": slice(6, 6)}),
+        ({"x": slice(2, 1)}, {"x": slice(5, 2)}),
     ],
     ids=lambda x: f"{x}",
 )
@@ -114,7 +118,7 @@ def da(request):
 
 
 def test_indexers_with_scalars(da):
-    n_blocks = np.product([size for size in da.blocks.sizes.values()])
+    n_blocks = np.product(da.blocks.shape)
     for i in range(n_blocks):
         block_indices = np.unravel_index(i, da.blocks.shape)
         block_indexers = {dim: index for dim, index in zip(da.dims, block_indices)}

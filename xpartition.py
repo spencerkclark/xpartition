@@ -43,9 +43,13 @@ def _validate_indexers(kwargs, sizes):
                 raise IndexError(
                     f"Index {v} is out of bounds for dimension {k!r} of length {sizes[k]}."
                 )
+        elif isinstance(v, slice):
+            if v.step is not None and v.step != 1:
+                raise NotImplementedError(
+                    "xpartition does not support indexing with slices with a step size different than None or 1."
+                )
         else:
-            if not isinstance(v, slice):
-                raise ValueError(f"Invalid indexer provided for dim {k!r}: {v}.")
+            raise ValueError(f"Invalid indexer provided for dim {k!r}: {v}.")
 
 
 def _convert_block_indexers_to_array_indexers(kwargs, chunks):
