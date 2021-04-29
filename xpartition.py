@@ -131,8 +131,8 @@ class BlocksAccessor:
         return {dim: size for dim, size in zip(self._obj.dims, self.shape)}
 
     def indexers(self, **kwargs) -> Region:
-        """Return a dict of array indexers that correspond to the provided block indexers.
-        
+        """Return a dict of array indexers that correspond to the block indexers.
+
         Parameters
         ----------
         **kwargs
