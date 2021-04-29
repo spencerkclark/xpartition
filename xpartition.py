@@ -23,7 +23,7 @@ def _is_integer(value):
 
 
 def _convert_scalars_to_slices(kwargs):
-    """Convert a set of xarray dimension-index pairs to solely use slices.
+    """Convert a dict of xarray dimension-index pairs to solely use slices.
 
     Assumes that the index values have been validated already in
     _validate_indexers.
@@ -83,7 +83,7 @@ def _validate_indexers(kwargs, sizes):
 
 
 def _convert_block_indexers_to_array_indexers(kwargs, chunks):
-    """Convert a set of dask block indexers to array indexers.
+    """Convert a dict of dask block indexers to array indexers.
 
     Parameters
     ----------
