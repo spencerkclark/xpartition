@@ -131,6 +131,40 @@ class BlocksAccessor:
         return {dim: size for dim, size in zip(self._obj.dims, self.shape)}
 
     def indexers(self, **kwargs) -> Region:
+        """Return a dict of array indexers that correspond to the provided block indexers.
+        
+        Parameters
+        ----------
+        **kwargs
+            Dimension-indexer pairs in dask block space.  These can be integers
+            or contiguous slices.
+
+        Returns
+        -------
+        dict
+
+        Examples
+        --------
+        >>> import xarray as xr; import dask.array as darray; import xpartition
+        >>> arr = darray.zeros((10, 20), chunks=(2, 5))
+        >>> da = xr.DataArray(arr, dims=["x", "y"], name="foo")
+        >>> da
+        <xarray.DataArray 'foo' (x: 10, y: 20)>
+        dask.array<zeros, shape=(10, 20), dtype=float64, chunksize=(2, 5), chunktype=numpy.ndarray>
+        Dimensions without coordinates: x, y
+        >>> da.blocks.indexers(x=2, y=3)
+        {'x': slice(4, 6, None), 'y': slice(15, 20, None)}
+        >>> da.blocks.indexers(x=2)
+        {'x': slice(4, 6, None)}
+        >>> da.blocks.indexers(x=slice(None, None))
+        {'x': slice(0, 10, None)}
+        >>> da.blocks.indexers(x=slice(None, 3))
+        {'x': slice(0, 6, None)}
+        >>> da.blocks.indexers(x=slice(3, None))
+        {'x': slice(6, 10, None)}
+        >>> da.blocks.indexers(x=2, y=slice(0, 2))
+        {'x': slice(4, 6, None), 'y': slice(0, 10, None)}
+        """
         _validate_indexers(kwargs, self.sizes)
         block_indexers = _convert_scalars_to_slices(kwargs)
         return _convert_block_indexers_to_array_indexers(block_indexers, self._chunks)
