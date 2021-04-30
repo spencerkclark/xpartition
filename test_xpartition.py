@@ -221,24 +221,23 @@ def test_zeros_like():
     shape = (2, 4)
     dims = ["x", "y"]
     attrs = {"foo": "bar"}
-    da1 = xr.DataArray(
-        dask.array.random.random(shape), dims=dims, name="a", attrs=attrs
-    )
-    da2 = xr.DataArray(
-        dask.array.random.randint(0, size=shape), dims=dims, name="b", attrs=attrs
-    )
-    da3 = xr.DataArray(
-        dask.array.random.random(shape, chunks=(1, 1)), dims=dims, name="c", attrs=attrs
-    )
+
+    data1 = dask.array.random.random(shape)
+    data2 = dask.array.random.randint(0, size=shape)
+    data3 = dask.array.random.random(shape, chunks=(1, 1))
+
+    da1 = xr.DataArray(data1, dims=dims, name="a", attrs=attrs)
+    da2 = xr.DataArray(data2, dims=dims, name="b", attrs=attrs)
+    da3 = xr.DataArray(data3, dims=dims, name="c", attrs=attrs)
     ds = xr.merge([da1, da2, da3])
 
-    zeros1 = xr.DataArray(dask.array.zeros(shape), dims=dims, name="a", attrs=attrs)
-    zeros2 = xr.DataArray(
-        dask.array.zeros(shape, dtype=int), dims=dims, name="b", attrs=attrs
-    )
-    zeros3 = xr.DataArray(
-        dask.array.zeros(shape, chunks=(1, 1)), dims=dims, name="c", attrs=attrs
-    )
+    zeros1_data = dask.array.zeros(shape)
+    zeros2_data = dask.array.zeros(shape, dtype=int)
+    zeros3_data = dask.array.zeros(shape, chunks=(1, 1))
+
+    zeros1 = xr.DataArray(zeros1_data, dims=dims, name="a", attrs=attrs)
+    zeros2 = xr.DataArray(zeros2_data, dims=dims, name="b", attrs=attrs)
+    zeros3 = xr.DataArray(zeros3_data, dims=dims, name="c", attrs=attrs)
     expected = xr.merge([zeros1, zeros2, zeros3])
 
     result = xpartition.zeros_like(ds)
