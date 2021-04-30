@@ -205,8 +205,12 @@ def test_partition_partition():
     ids=lambda x: f"{x}",
 )
 @pytest.mark.parametrize("dtype", [float, int])
-def test__zeros_like_dataarray(original_chunks, override_chunks, expected_chunks, dtype):
-    da = xr.DataArray(np.zeros((10, 6), dtype=dtype), dims=["x", "y"]).chunk(original_chunks)
+def test__zeros_like_dataarray(
+    original_chunks, override_chunks, expected_chunks, dtype
+):
+    da = xr.DataArray(np.zeros((10, 6), dtype=dtype), dims=["x", "y"]).chunk(
+        original_chunks
+    )
     result = xpartition._zeros_like_dataarray(da, override_chunks)
     result_chunks = result.chunks
     assert result_chunks == expected_chunks
@@ -217,14 +221,24 @@ def test_zeros_like():
     shape = (2, 4)
     dims = ["x", "y"]
     attrs = {"foo": "bar"}
-    da1 = xr.DataArray(dask.array.random.random(shape), dims=dims, name="a", attrs=attrs)
-    da2 = xr.DataArray(dask.array.random.randint(0, size=shape), dims=dims, name="b", attrs=attrs)
-    da3 = xr.DataArray(dask.array.random.random(shape, chunks=(1, 1)), dims=dims, name="c", attrs=attrs)
+    da1 = xr.DataArray(
+        dask.array.random.random(shape), dims=dims, name="a", attrs=attrs
+    )
+    da2 = xr.DataArray(
+        dask.array.random.randint(0, size=shape), dims=dims, name="b", attrs=attrs
+    )
+    da3 = xr.DataArray(
+        dask.array.random.random(shape, chunks=(1, 1)), dims=dims, name="c", attrs=attrs
+    )
     ds = xr.merge([da1, da2, da3])
 
     zeros1 = xr.DataArray(dask.array.zeros(shape), dims=dims, name="a", attrs=attrs)
-    zeros2 = xr.DataArray(dask.array.zeros(shape, dtype=int), dims=dims, name="b", attrs=attrs)
-    zeros3 = xr.DataArray(dask.array.zeros(shape, chunks=(1, 1)), dims=dims, name="c", attrs=attrs)
+    zeros2 = xr.DataArray(
+        dask.array.zeros(shape, dtype=int), dims=dims, name="b", attrs=attrs
+    )
+    zeros3 = xr.DataArray(
+        dask.array.zeros(shape, chunks=(1, 1)), dims=dims, name="c", attrs=attrs
+    )
     expected = xr.merge([zeros1, zeros2, zeros3])
 
     result = xpartition.zeros_like(ds)
