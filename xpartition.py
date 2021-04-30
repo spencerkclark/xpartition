@@ -339,7 +339,7 @@ def _zeros_like_dataarray(arr, override_chunks):
         override_chunks = {}
     chunks = _merge_chunks(arr, override_chunks)
     return xr.apply_ufunc(
-        dask.array.zeros_like, arr, kwargs=dict(chunks=chunks), dask="allowed"
+        dask.array.zeros, arr.shape, kwargs=dict(chunks=chunks), dask="allowed"
     )
 
 
