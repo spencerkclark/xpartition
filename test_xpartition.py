@@ -148,12 +148,15 @@ def test_dataset_mappable_write(tmpdir, ds, ranks):
 
 
 @pytest.mark.parametrize("has_coord", [True, False])
-def test_PartitionMapper_integration(tmpdir, has_coord):
+@pytest.mark.parametrize(
+    "original_chunks", [{"x": 2}, {"x": 2, "y": 5}], ids=lambda x: f"{x}"
+)
+def test_PartitionMapper_integration(tmpdir, has_coord, original_chunks):
     def func(ds):
         return ds.rename(z="new_name").assign_attrs(dataset_attr="fun")
 
     ds = xr.Dataset({"z": (["x", "y"], np.ones((5, 10)), {"an": "attr"})}).chunk(
-        {"x": 2}
+        original_chunks
     )
     if has_coord:
         ds = ds.assign_coords(x=range(5))
@@ -189,3 +192,18 @@ def test_partition_partition():
     # 2. the sets cover the original set
     union = set.union(*[to_set(arr.isel(region)) for region in regions])
     assert union == to_set(arr)
+
+
+@pytest.mark.parametrize(
+    ("original_chunks", "override_chunks", "expected"),
+    [
+        ({"x": 5, "y": 2}, None, ((5, 5), (2, 2, 2))),
+        ({"x": 5, "y": 2}, {"y": 3}, ((5, 5), (3, 3))),
+        ({"x": 5, "y": 2}, {"y": 3, "z": 1}, ((5, 5), (3, 3))),
+    ],
+    ids=lambda x: f"{x}",
+)
+def test__zeros_like_dataarray(original_chunks, override_chunks, expected):
+    da = xr.DataArray(np.zeros((10, 6)), dims=["x", "y"]).chunk(original_chunks)
+    result = xpartition._zeros_like_dataarray(da, override_chunks).chunks
+    assert result == expected
