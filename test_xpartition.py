@@ -2,6 +2,7 @@ import multiprocessing
 import os
 import string
 
+import dask
 import pytest
 import numpy as np
 import xarray as xr
@@ -148,12 +149,15 @@ def test_dataset_mappable_write(tmpdir, ds, ranks):
 
 
 @pytest.mark.parametrize("has_coord", [True, False])
-def test_PartitionMapper_integration(tmpdir, has_coord):
+@pytest.mark.parametrize(
+    "original_chunks", [{"x": 2}, {"x": 2, "y": 5}], ids=lambda x: f"{x}"
+)
+def test_PartitionMapper_integration(tmpdir, has_coord, original_chunks):
     def func(ds):
         return ds.rename(z="new_name").assign_attrs(dataset_attr="fun")
 
     ds = xr.Dataset({"z": (["x", "y"], np.ones((5, 10)), {"an": "attr"})}).chunk(
-        {"x": 2}
+        original_chunks
     )
     if has_coord:
         ds = ds.assign_coords(x=range(5))
@@ -189,3 +193,57 @@ def test_partition_partition():
     # 2. the sets cover the original set
     union = set.union(*[to_set(arr.isel(region)) for region in regions])
     assert union == to_set(arr)
+
+
+@pytest.mark.parametrize(
+    ("original_chunks", "override_chunks", "expected_chunks"),
+    [
+        ({"x": 5, "y": 2}, None, ((5, 5), (2, 2, 2))),
+        ({"x": 5, "y": 2}, {"y": 3}, ((5, 5), (3, 3))),
+        ({"x": 5, "y": 2}, {"y": 3, "z": 1}, ((5, 5), (3, 3))),
+    ],
+    ids=lambda x: f"{x}",
+)
+@pytest.mark.parametrize("dtype", [float, int])
+def test__zeros_like_dataarray(
+    original_chunks, override_chunks, expected_chunks, dtype
+):
+    da = xr.DataArray(np.zeros((10, 6), dtype=dtype), dims=["x", "y"]).chunk(
+        original_chunks
+    )
+    result = xpartition._zeros_like_dataarray(da, override_chunks)
+    result_chunks = result.chunks
+    assert result_chunks == expected_chunks
+    assert result.dtype == da.dtype
+
+
+def test_zeros_like():
+    shape = (2, 4)
+    dims = ["x", "y"]
+    attrs = {"foo": "bar"}
+
+    data1 = dask.array.random.random(shape)
+    data2 = dask.array.random.randint(0, size=shape)
+    data3 = dask.array.random.random(shape, chunks=(1, 1))
+
+    da1 = xr.DataArray(data1, dims=dims, name="a", attrs=attrs)
+    da2 = xr.DataArray(data2, dims=dims, name="b", attrs=attrs)
+    da3 = xr.DataArray(data3, dims=dims, name="c", attrs=attrs)
+    ds = xr.merge([da1, da2, da3])
+
+    zeros1_data = dask.array.zeros(shape)
+    zeros2_data = dask.array.zeros(shape, dtype=int)
+    zeros3_data = dask.array.zeros(shape, chunks=(1, 1))
+
+    zeros1 = xr.DataArray(zeros1_data, dims=dims, name="a", attrs=attrs)
+    zeros2 = xr.DataArray(zeros2_data, dims=dims, name="b", attrs=attrs)
+    zeros3 = xr.DataArray(zeros3_data, dims=dims, name="c", attrs=attrs)
+    expected = xr.merge([zeros1, zeros2, zeros3])
+
+    result = xpartition.zeros_like(ds)
+    xr.testing.assert_identical(result, expected)
+
+    for var in result:
+        # assert_identical does not check dtype or chunks
+        assert result[var].dtype == expected[var].dtype
+        assert result[var].chunks == expected[var].chunks
