@@ -325,13 +325,13 @@ class PartitionDatasetAccessor:
 
 
 def _merge_chunks(arr, override_chunks):
-    override_chunks = {
-        arr.get_axis_num(dim): sizes
-        for dim, sizes in override_chunks.items()
-        if dim in arr.dims
-    }
-    original_chunks = {dim: sizes for dim, sizes in enumerate(arr.chunks)}
-    return {**original_chunks, **override_chunks}
+    chunks_to_update = {}
+    for dim, sizes in override_chunks.items():
+        if dim in arr.dims:
+            axis = arr.get_axis_num(dim)
+            chunks_to_update[axis] = sizes
+    original_chunks = {axis: sizes for axis, sizes in enumerate(arr.chunks)}
+    return {**original_chunks, **chunks_to_update}
 
 
 def _zeros_like_dataarray(arr, override_chunks):
@@ -364,7 +364,7 @@ def zeros_like(ds: xr.Dataset, override_chunks=None):
     xr.Dataset
     """
     return ds.apply(
-        zeros_like_dataarray, override_chunks=override_chunks, keep_attrs=True
+        _zeros_like_dataarray, override_chunks=override_chunks, keep_attrs=True
     )
 
 
