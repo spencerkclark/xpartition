@@ -22,7 +22,7 @@ def _is_integer(value):
     return isinstance(value, (int, np.integer))
 
 
-def _convert_scalars_to_slices(kwargs):
+def _convert_scalars_to_slices(indexers):
     """Convert a dict of xarray dimension-index pairs to solely use slices.
 
     Assumes that the index values have been validated already in
@@ -30,7 +30,7 @@ def _convert_scalars_to_slices(kwargs):
 
     Parameters
     ----------
-    kwargs : dict
+    indexers : dict
         Dictionary mapping dimension names to integers or slices.
 
     Returns
@@ -38,7 +38,7 @@ def _convert_scalars_to_slices(kwargs):
     dict
     """
     result = {}
-    for k, v in kwargs.items():
+    for k, v in indexers.items():
         if isinstance(v, slice):
             result[k] = v
         else:
@@ -46,7 +46,7 @@ def _convert_scalars_to_slices(kwargs):
     return result
 
 
-def _validate_indexers(kwargs, sizes):
+def _validate_indexers(indexers, sizes):
     """Check that indexers for an array with given sizes are valid.
 
     xpartition does not support indexing the blocks with non-contiguous array
@@ -55,7 +55,7 @@ def _validate_indexers(kwargs, sizes):
 
     Parameters
     ----------
-    kwargs : dict
+    indexers : dict
         Dictionary mapping dimension names to possible indexers.
     sizes : dict
         Dictionary mapping dimension names to sizes of the array.
@@ -65,7 +65,7 @@ def _validate_indexers(kwargs, sizes):
     KeyError, IndexError, NotImplementedError, or ValueError depending on the
     context.
     """
-    for k, v in kwargs.items():
+    for k, v in indexers.items():
         if k not in sizes:
             raise KeyError(f"Dimension {k!r} is not a valid dimension.")
         elif _is_integer(v):
@@ -82,12 +82,12 @@ def _validate_indexers(kwargs, sizes):
             raise ValueError(f"Invalid indexer provided for dim {k!r}: {v}.")
 
 
-def _convert_block_indexers_to_array_indexers(kwargs, chunks):
+def _convert_block_indexers_to_array_indexers(block_indexers, chunks):
     """Convert a dict of dask block indexers to array indexers.
 
     Parameters
     ----------
-    kwargs : dict
+    block_indexers : dict
         Dictionary mapping dimension names to slices.  The slices
         represent slices in dask block space.
     chunks : dict
@@ -98,15 +98,15 @@ def _convert_block_indexers_to_array_indexers(kwargs, chunks):
     -------
     dict
     """
-    slices = {}
-    for dim, indexer in kwargs.items():
-        if indexer.start is None:
+    array_indexers = {}
+    for dim, block_indexer in block_indexers.items():
+        if block_indexer.start is None:
             start = 0
         else:
-            start = sum(chunks[dim][: indexer.start])
-        stop = sum(chunks[dim][: indexer.stop])
-        slices[dim] = slice(start, stop)
-    return slices
+            start = sum(chunks[dim][: block_indexer.start])
+        stop = sum(chunks[dim][: block_indexer.stop])
+        array_indexers[dim] = slice(start, stop)
+    return array_indexers
 
 
 @xr.register_dataarray_accessor("blocks")
@@ -130,12 +130,12 @@ class BlocksAccessor:
     def sizes(self) -> Dict[Hashable, int]:
         return {dim: size for dim, size in zip(self._obj.dims, self.shape)}
 
-    def indexers(self, **kwargs) -> Region:
+    def indexers(self, **block_indexers) -> Region:
         """Return a dict of array indexers that correspond to the block indexers.
 
         Parameters
         ----------
-        **kwargs
+        **block_indexers
             Dimension-indexer pairs in dask block space.  These can be integers
             or contiguous slices.
 
@@ -165,12 +165,12 @@ class BlocksAccessor:
         >>> da.blocks.indexers(x=2, y=slice(0, 2))
         {'x': slice(4, 6, None), 'y': slice(0, 10, None)}
         """
-        _validate_indexers(kwargs, self.sizes)
-        block_indexers = _convert_scalars_to_slices(kwargs)
+        _validate_indexers(block_indexers, self.sizes)
+        block_indexers = _convert_scalars_to_slices(block_indexers)
         return _convert_block_indexers_to_array_indexers(block_indexers, self._chunks)
 
-    def isel(self, **kwargs) -> xr.DataArray:
-        slices = self.indexers(**kwargs)
+    def isel(self, **block_indexers) -> xr.DataArray:
+        slices = self.indexers(**block_indexers)
         # TODO: should we squeeze out dimensions where scalars were passed?
         return self._obj.isel(slices)
 
