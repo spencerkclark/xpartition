@@ -250,3 +250,10 @@ def test_zeros_like():
         # assert_identical does not check dtype or chunks
         assert result[var].dtype == expected[var].dtype
         assert result[var].chunks == expected[var].chunks
+
+
+def test_partition_indexers_invalid_rank_error():
+    data = dask.array.zeros((6, 4), chunks=((6, 4)))
+    da = xr.DataArray(data, dims=["x", "y"])
+    with pytest.raises(ValueError, match="greater than maximum rank"):
+        da.partition.indexers(1, 1, ["x"])

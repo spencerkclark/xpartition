@@ -295,8 +295,8 @@ class PartitionDataArrayAccessor:
         -------
         Dict[Hashable, slice]
         """
-        if (rank - 1) > ranks:
-            raise ValueError(f"Rank {rank} is greater than available ranks {ranks}.")
+        if rank >= ranks:
+            raise ValueError(f"Rank {rank} is greater than maximum rank {ranks - 1}.")
 
         meta_chunk_sizes = self._optimal_meta_chunk_sizes(ranks, dims)
         meta_array = self._meta_array(meta_chunk_sizes)
