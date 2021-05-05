@@ -27,7 +27,7 @@ import xpartition
         ({"x": 1}, {"x": slice(2, 5)}, None),
         ({"x": -1}, {"x": slice(5, 6)}, None),
         ({"x": -2}, {"x": slice(2, 5)}, None),
-        ({"x": np.int32(2)}, {"x": slice(2, 5)}, None),
+        ({"x": np.int32(2)}, {"x": slice(5, 6)}, None),
         ({"x": slice(0, 3), "y": 1}, {"x": slice(0, 6), "y": slice(3, 4)}, None),
         ({"x": 4}, None, IndexError),
         ({"x": -4}, None, IndexError),
@@ -70,6 +70,16 @@ def test_dataarray_mappable_write(tmpdir, da, ranks):
 
     result = xr.open_zarr(store)
     xr.testing.assert_identical(result, ds)
+
+
+def _construct_dataarray(shape, chunks, name):
+    dims = list(string.ascii_lowercase[: len(shape)])
+    data = np.random.random(shape)
+    da = xr.DataArray(data, dims=dims, name=name)
+    if chunks is not None:
+        chunks = {dim: chunk for dim, chunk in zip(dims, chunks)}
+        da = da.chunk(chunks)
+    return da
 
 
 ALIGNED_SHAPE_AND_CHUNK_PAIRS = [
