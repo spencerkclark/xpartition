@@ -72,6 +72,31 @@ def test_dataarray_mappable_write(tmpdir, da, ranks):
     xr.testing.assert_identical(result, ds)
 
 
+SHAPE_AND_CHUNK_PAIRS = [
+    ((5,), (1,)),
+    ((5,), (2,)),
+    ((5,), (5,)),
+    ((2, 5), (1, 1)),
+    ((2, 5), (2, 1)),
+    ((2, 5), (2, 2)),
+    ((2, 5), (2, 4)),
+    ((2, 5), (2, 5)),
+    ((2, 1, 6), (1, 1, 1)),
+    ((2, 1, 6), (1, 1, 2)),
+    ((2, 1, 6), (2, 1, 2)),
+    ((2, 1, 6), (2, 1, 5)),
+    ((2, 3, 4, 5), (1, 1, 1, 1)),
+    ((2, 3, 4, 5), (2, 1, 3, 3)),
+]
+
+
+@pytest.fixture(params=SHAPE_AND_CHUNK_PAIRS, ids=lambda x: str(x))
+def da(request):
+    shape, chunks = request.param
+    name = "foo"
+    return _construct_dataarray(shape, chunks, name)
+
+
 def _construct_dataarray(shape, chunks, name):
     dims = list(string.ascii_lowercase[: len(shape)])
     data = np.random.random(shape)
