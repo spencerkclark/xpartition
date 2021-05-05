@@ -3,121 +3,113 @@ import math
 
 import dask.array
 import numpy as np
-import pandas as pd
 import xarray as xr
 import dataclasses
 import logging
 
-from typing import Callable, Dict, Hashable, List, Sequence, Tuple, Mapping
+from typing import Callable, Dict, Hashable, Sequence, Tuple, Mapping
 
 
 __version__ = "0.1.0"
 
 
-DIMENSION_DIM = "dimension"
-SLICE_BOUND_DIM = "slice_bound"
-SLICE_BOUND_INDEX = pd.Index(["start", "stop"], name=SLICE_BOUND_DIM)
-AUXILLARY_DIMENSIONS = [DIMENSION_DIM, SLICE_BOUND_DIM]
-
 Region = Sequence[Mapping[Hashable, slice]]
 Partition = Sequence[Region]
 
 
-def _chunks_as_data_arrays(da: xr.DataArray) -> xr.Dataset:
-    chunks = da.chunks
-    arrays = []
-    for dim, chunks in zip(da.dims, da.chunks):
-        arrays.append(xr.DataArray(list(chunks), dims=[dim], name=f"{dim}_chunks"))
-    return xr.merge(arrays)
+def _is_integer(value):
+    """Check if a value is a Python or NumPy integer instance."""
+    return isinstance(value, (int, np.integer))
 
 
-def _block_starts(da: xr.DataArray) -> List[xr.DataArray]:
-    chunks_as_data_arrays = _chunks_as_data_arrays(da)
-    stops = _block_stops(da)
-    return [stop - a for stop, a in zip(stops, chunks_as_data_arrays.values())]
+def _convert_scalars_to_slices(indexers):
+    """Convert a dict of xarray dimension-index pairs to solely use slices.
 
-
-def _block_stops(da: xr.DataArray) -> List[xr.DataArray]:
-    chunks_as_data_arrays = _chunks_as_data_arrays(da)
-    return [a.cumsum(a.dims) for a in chunks_as_data_arrays.values()]
-
-
-def block_indices(da: xr.DataArray) -> xr.DataArray:
-    """Generate an array of dask array block bounds for a DataArray.
+    Assumes that the index values have been validated already in
+    _validate_indexers.
 
     Parameters
     ----------
-    da : xr.DataArray
+    indexers : dict
+        Dictionary mapping dimension names to integers or slices.
 
     Returns
     -------
-    xr.DataArray
+    dict
     """
-    starts = _block_starts(da)
-    stops = _block_stops(da)
-    dimension_index = pd.Index(da.dims, name=DIMENSION_DIM)
-    starts = xr.concat(xr.broadcast(*starts), dim=dimension_index)
-    stops = xr.concat(xr.broadcast(*stops), dim=dimension_index)
-    result = xr.concat([starts, stops], dim=SLICE_BOUND_INDEX)
-
-    # Put auxillary dimensions at the end to make it easier to select
-    # contiguous slices.
-    return result.transpose(*dimension_index, ...)
-
-
-def block_to_slices(block: xr.DataArray) -> Dict[Hashable, slice]:
-    """Convert a DataArray representing a single block to a dictionary of slices.
-
-    Parameters
-    ----------
-    block : xr.DataArray
-
-    Returns
-    -------
-    Dictionary mapping dimension names to slices.
-    """
-    slices = {}
-    for dim in block.dimension:
-        start = block.sel({SLICE_BOUND_DIM: "start", DIMENSION_DIM: dim}).item()
-        stop = block.sel({SLICE_BOUND_DIM: "stop", DIMENSION_DIM: dim}).item()
-        slices[dim.item()] = slice(start, stop)
-    return slices
-
-
-def merge_blocks(blocks: xr.DataArray, dims: Sequence[Hashable]):
-    """Merge a DataArray of blocks into a single block.
-
-    Parameters
-    ----------
-    blocks : xr.DataArray
-        An input array of blocks; must have dimensions "slice_bound"
-        and "dimension".
-    dims : Sequence[Hashable]
-        Dimensions to merge blocks along.
-
-    Notes
-    -------
-    Assumes that the input blocks are contiguous.
-
-    Returns
-    -------
-    xr.DataArray for a single merged block.
-    """
-    start = blocks.isel({dim: 0 for dim in dims}).sel({SLICE_BOUND_DIM: "start"})
-    stop = blocks.isel({dim: -1 for dim in dims}).sel({SLICE_BOUND_DIM: "stop"})
-    return xr.concat([start, stop], dim=SLICE_BOUND_INDEX)
-
-
-def _scalars_to_slices(kwargs):
     result = {}
-    for k, v in kwargs.items():
+    for k, v in indexers.items():
         if isinstance(v, slice):
             result[k] = v
-        elif np.issubdtype(v, np.integer):
-            result[k] = slice(v, v + 1)
         else:
-            raise ValueError(f"Invalid indexer provided for dim {k}: {v}.")
+            if v == -1:
+                result[k] = slice(v, None)
+            else:
+                result[k] = slice(v, v + 1)
     return result
+
+
+def _validate_indexers(indexers, sizes):
+    """Check that indexers for an array with given sizes are valid.
+
+    xpartition does not support indexing the blocks with non-contiguous array
+    regions, e.g. with slices that skip elements.  It also does not support
+    indexing with anything other than an integer or slice along a dimension.
+
+    Parameters
+    ----------
+    indexers : dict
+        Dictionary mapping dimension names to possible indexers.
+    sizes : dict
+        Dictionary mapping dimension names to sizes of the array.
+
+    Raises
+    ------
+    KeyError, IndexError, NotImplementedError, or ValueError depending on the
+    context.
+    """
+    for k, v in indexers.items():
+        if k not in sizes:
+            raise KeyError(f"Dimension {k!r} is not a valid dimension.")
+        elif _is_integer(v):
+            if abs(v) > sizes[k] - 1:
+                raise IndexError(
+                    f"Index {v} is out of bounds for dimension {k!r} of length {sizes[k]}."
+                )
+        elif isinstance(v, slice):
+            if v.step is not None and v.step != 1:
+                raise NotImplementedError(
+                    "xpartition does not support indexing with slices with a step size different than None or 1."
+                )
+        else:
+            raise ValueError(f"Invalid indexer provided for dim {k!r}: {v}.")
+
+
+def _convert_block_indexers_to_array_indexers(block_indexers, chunks):
+    """Convert a dict of dask block indexers to array indexers.
+
+    Parameters
+    ----------
+    block_indexers : dict
+        Dictionary mapping dimension names to slices.  The slices
+        represent slices in dask block space.
+    chunks : dict
+        Dictionary mapping dimension names to tuples representing
+        the chunk structure of the given dimension.
+
+    Returns
+    -------
+    dict
+    """
+    array_indexers = {}
+    for dim, block_indexer in block_indexers.items():
+        if block_indexer.start is None:
+            start = 0
+        else:
+            start = sum(chunks[dim][: block_indexer.start])
+        stop = sum(chunks[dim][: block_indexer.stop])
+        array_indexers[dim] = slice(start, stop)
+    return array_indexers
 
 
 @xr.register_dataarray_accessor("blocks")
@@ -130,8 +122,8 @@ class BlocksAccessor:
             )
 
     @property
-    def _blocks(self) -> xr.DataArray:
-        return block_indices(self._obj)
+    def _chunks(self) -> Dict[Hashable, Tuple[int, ...]]:
+        return {dim: self._obj.chunks[k] for k, dim in enumerate(self._obj.dims)}
 
     @property
     def shape(self) -> Tuple[int, ...]:
@@ -141,14 +133,47 @@ class BlocksAccessor:
     def sizes(self) -> Dict[Hashable, int]:
         return {dim: size for dim, size in zip(self._obj.dims, self.shape)}
 
-    def indexers(self, **kwargs) -> Region:
-        kwargs = _scalars_to_slices(kwargs)
-        blocks = self._blocks.isel(**kwargs)
-        merged = merge_blocks(blocks, self._obj.dims)
-        return block_to_slices(merged)
+    def indexers(self, **block_indexers) -> Region:
+        """Return a dict of array indexers that correspond to the block indexers.
 
-    def isel(self, **kwargs) -> xr.DataArray:
-        slices = self.indexers(**kwargs)
+        Parameters
+        ----------
+        **block_indexers
+            Dimension-indexer pairs in dask block space.  These can be integers
+            or contiguous slices.
+
+        Returns
+        -------
+        dict
+
+        Examples
+        --------
+        >>> import xarray as xr; import dask.array as darray; import xpartition
+        >>> arr = darray.zeros((10, 20), chunks=(2, 5))
+        >>> da = xr.DataArray(arr, dims=["x", "y"], name="foo")
+        >>> da
+        <xarray.DataArray 'foo' (x: 10, y: 20)>
+        dask.array<zeros, shape=(10, 20), dtype=float64, chunksize=(2, 5), chunktype=numpy.ndarray>
+        Dimensions without coordinates: x, y
+        >>> da.blocks.indexers(x=2, y=3)
+        {'x': slice(4, 6, None), 'y': slice(15, 20, None)}
+        >>> da.blocks.indexers(x=2)
+        {'x': slice(4, 6, None)}
+        >>> da.blocks.indexers(x=slice(None, None))
+        {'x': slice(0, 10, None)}
+        >>> da.blocks.indexers(x=slice(None, 3))
+        {'x': slice(0, 6, None)}
+        >>> da.blocks.indexers(x=slice(3, None))
+        {'x': slice(6, 10, None)}
+        >>> da.blocks.indexers(x=2, y=slice(0, 2))
+        {'x': slice(4, 6, None), 'y': slice(0, 10, None)}
+        """
+        _validate_indexers(block_indexers, self.sizes)
+        block_indexers = _convert_scalars_to_slices(block_indexers)
+        return _convert_block_indexers_to_array_indexers(block_indexers, self._chunks)
+
+    def isel(self, **block_indexers) -> xr.DataArray:
+        slices = self.indexers(**block_indexers)
         # TODO: should we squeeze out dimensions where scalars were passed?
         return self._obj.isel(slices)
 
