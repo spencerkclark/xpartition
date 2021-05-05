@@ -42,7 +42,10 @@ def _convert_scalars_to_slices(indexers):
         if isinstance(v, slice):
             result[k] = v
         else:
-            result[k] = slice(v, v + 1)
+            if v == -1:
+                result[k] = slice(v, None)
+            else:
+                result[k] = slice(v, v + 1)
     return result
 
 
