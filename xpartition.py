@@ -11,6 +11,9 @@ import logging
 from typing import Callable, Dict, Hashable, List, Sequence, Tuple, Mapping
 
 
+__version__ = "0.1.0"
+
+
 DIMENSION_DIM = "dimension"
 SLICE_BOUND_DIM = "slice_bound"
 SLICE_BOUND_INDEX = pd.Index(["start", "stop"], name=SLICE_BOUND_DIM)
@@ -168,6 +171,20 @@ def _write_partition_dataset(
             da.partition.write(store, ranks, partition_dims, rank)
 
 
+class Map(Sequence):
+    """Lazy sequence"""
+
+    def __init__(self, func, seq):
+        self.seq = seq
+        self.func = func
+
+    def __getitem__(self, i):
+        return self.func(self.seq[i])
+
+    def __len__(self):
+        return len(self.seq)
+
+
 @xr.register_dataarray_accessor("partition")
 class PartitionDataArrayAccessor:
     def __init__(self, xarray_obj):
@@ -230,7 +247,11 @@ class PartitionDataArrayAccessor:
         -------
         a list of disjoint regions whose union is the full coordinate space
         """
-        return [self.indexers(ranks, rank, dims) for rank in range(ranks)]
+        return Map(functools.partial(self._indexers, ranks, dims), list(range(ranks)))
+
+    def _indexers(self, ranks, dims, rank):
+        """Needed for creating a partial function within the partition method."""
+        return self.indexers(ranks, rank, dims)
 
     def indexers(self, ranks: int, rank: int, dims: Sequence[Hashable]) -> Region:
         """Partition the dask blocks across the given dims.
@@ -303,17 +324,48 @@ class PartitionDatasetAccessor:
         )
 
 
-def zeros_like_dataarray(arr, chunks):
-    dask_chunks = {
-        arr.get_axis_num(dim): size for dim, size in chunks.items() if dim in arr.dims
-    }
+def _merge_chunks(arr, override_chunks):
+    chunks_to_update = {}
+    for dim, sizes in override_chunks.items():
+        if dim in arr.dims:
+            axis = arr.get_axis_num(dim)
+            chunks_to_update[axis] = sizes
+    original_chunks = {axis: sizes for axis, sizes in enumerate(arr.chunks)}
+    return {**original_chunks, **chunks_to_update}
+
+
+def _zeros_like_dataarray(arr, override_chunks):
+    if override_chunks is None:
+        override_chunks = {}
+    chunks = _merge_chunks(arr, override_chunks)
     return xr.apply_ufunc(
-        dask.array.zeros_like, arr, kwargs=dict(chunks=dask_chunks), dask="allowed"
+        dask.array.zeros_like, arr, kwargs=dict(chunks=chunks), dask="allowed"
     )
 
 
-def zeros_like(ds: xr.Dataset, chunks):
-    return ds.apply(zeros_like_dataarray, chunks=chunks, keep_attrs=True)
+def zeros_like(ds: xr.Dataset, override_chunks=None):
+    """Performant implementation of zeros_like.
+
+    xr.zeros_like(ds).chunk(chunks) is very slow for datasets with many
+    changes.
+
+    Parameters
+    ----------
+    ds : xr.Dataset
+        Input dataset with dask-backed data variables.
+    override_chunks : dict
+        Dimension chunk-size pairs indicating any dimensions one would like to
+        override the original chunk sizes along.  For any dimensions that are not
+        present, zeros_like will use the chunk size along that dimension for each
+        variable in the input Dataset.
+
+    Returns
+    -------
+    xr.Dataset
+    """
+    return ds.apply(
+        _zeros_like_dataarray, override_chunks=override_chunks, keep_attrs=True
+    )
 
 
 class _ValidWorkPlan:
@@ -361,7 +413,9 @@ class PartitionMapper:
         for dim in dims_without_coords:
             iOut = iOut.assign_coords({dim: iOut[dim]})
 
-        schema = zeros_like(iOut.reindex(full_indexers), chunks=self.plan.output_chunks)
+        schema = zeros_like(
+            iOut.reindex(full_indexers), override_chunks=self.plan.output_chunks
+        )
         schema = schema.drop_vars(dims_without_coords)
         schema.partition.initialize_store(self.path)
 
@@ -371,6 +425,7 @@ class PartitionMapper:
         iData = self.data.isel(region)
         iOut = self.func(iData)
         iOut.to_zarr(self.path, region=region)
+        logging.info(f"Done writing {rank + 1}.")
 
     def __iter__(self):
         self._initialize_store()

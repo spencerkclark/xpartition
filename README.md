@@ -1,5 +1,10 @@
 # xpartition
 
+[![Build
+Status](https://github.com/spencerkclark/xpartition/workflows/tests/badge.svg?branch=main)](https://github.com/spencerkclark/xpartition/actions)
+[![codecov](https://codecov.io/gh/spencerkclark/xpartition/branch/main/graph/badge.svg?token=H1DBBSTQ2V)](https://codecov.io/gh/spencerkclark/xpartition)
+[![PyPI](https://img.shields.io/pypi/v/xpartition.svg)](https://pypi.python.org/pypi/xpartition/)
+
 This is a tool that can make writing large xarray datasets to cohesive zarr
 stores from completely independent processes easier.
 
@@ -119,6 +124,22 @@ the benefits of dask's laziness on each independent process, while working in a
 distributed environment.  *In an ideal world we wouldn't need a package like
 this -- we would let dask and dask distributed handle everything -- but in
 practice that does not work perfectly yet.*
+
+## Installation
+
+`xpartition` can either be installed from PyPI:
+
+```
+$ pip install xpartition
+```
+
+or directly from source:
+
+```
+$ git clone https://github.com/spencerkclark/xpartition.git
+$ cd xpartition
+$ pip install -e .
+```
 
 ## See also
 
