@@ -10,7 +10,7 @@ import logging
 from typing import Callable, Dict, Hashable, Sequence, Tuple, Mapping
 
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 
 Region = Sequence[Mapping[Hashable, slice]]
