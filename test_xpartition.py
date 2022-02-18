@@ -278,7 +278,7 @@ def test_HashableIndexers(a, b):
 
 class CountingScheduler:
     """Inspired by xarray
-    
+
     https://github.com/pydata/xarray/blob/33fbb648ac042f821a11870ffa544e5bcb6e178f/xarray/tests/__init__.py#L97-L113
     """
 
