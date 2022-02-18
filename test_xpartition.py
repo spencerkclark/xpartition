@@ -290,18 +290,6 @@ class CountingScheduler:
         return dask.get(dsk, keys, **kwargs)
 
 
-@pytest.mark.parametrize(
-    "indexers", [{"a": slice(None, None, 3), "b": slice(1, 10, 2)}, None]
-)
-def test_HashableIndexers_from_immutable_representation(indexers):
-    hashable_indexers = xpartition.HashableIndexers(indexers)
-    immutable_representation = hashable_indexers.immutable_representation
-    result = xpartition.HashableIndexers.from_immutable_representation(
-        immutable_representation
-    )
-    assert result == hashable_indexers
-
-
 def test_dataset_mappable_write_minimizes_compute_calls(tmpdir):
     # This tests to ensure that calls to compute are minimized when writing
     # partitioned Datasets.  Previously, a compute was called separately for

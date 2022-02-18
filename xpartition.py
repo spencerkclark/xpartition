@@ -203,13 +203,6 @@ class HashableIndexers:
     def __hash__(self):
         return hash(self.immutable_representation)
 
-    @classmethod
-    def from_immutable_representation(cls, immutable_representation):
-        if immutable_representation is None:
-            return cls(None)
-        else:
-            return cls({k: slice(*s) for k, s in immutable_representation})
-
 
 def _collect_by_partition(
     ds: xr.Dataset, ranks: int, dims: Sequence[Hashable], rank: int
@@ -219,31 +212,22 @@ def _collect_by_partition(
     """
     dataarrays = collections.defaultdict(list)
     for da in ds.data_vars.values():
-        partition_dims = [dim for dim in dims if dim in da.dims]
-        indexers = da.partition.indexers(ranks, rank, partition_dims)
-        if indexers is not None:
-            # We can ignore DataArrays whose indexers are None, because it
-            # means that no data needs to be written out from them on this
-            # rank.
-            key = HashableIndexers(indexers)
-            dataarrays[key].append(da)
-    return [(k.indexers, xr.merge(v)) for k, v in dataarrays.items()]
-
-
-def _filter_dask_backed_dataarrays(ds: xr.Dataset) -> xr.Dataset:
-    """Return a Dataset containing only dask-backed data variables."""
-    result = []
-    for da in ds.data_vars.values():
         if isinstance(da.data, dask.array.Array):
-            result.append(da)
-    return xr.merge(result)
+            partition_dims = [dim for dim in dims if dim in da.dims]
+            indexers = da.partition.indexers(ranks, rank, partition_dims)
+            if indexers is not None:
+                # We can ignore DataArrays whose indexers are None, because it
+                # means that no data needs to be written out from them on this
+                # rank.
+                key = HashableIndexers(indexers)
+                dataarrays[key].append(da)
+    return [(k.indexers, xr.merge(v)) for k, v in dataarrays.items()]
 
 
 def _write_partition_dataset(
     ds: xr.Dataset, store: str, ranks: int, dims: Sequence[Hashable], rank: int
 ):
-    dask_only_ds = _filter_dask_backed_dataarrays(ds)
-    collected_by_partition = _collect_by_partition(dask_only_ds, ranks, dims, rank)
+    collected_by_partition = _collect_by_partition(ds, ranks, dims, rank)
     for partition, d in collected_by_partition:
         d.isel(partition).to_zarr(store, region=partition)
 
