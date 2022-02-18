@@ -257,3 +257,72 @@ def test_partition_indexers_invalid_rank_error():
     da = xr.DataArray(data, dims=["x", "y"])
     with pytest.raises(ValueError, match="greater than maximum rank"):
         da.partition.indexers(1, 1, ["x"])
+
+
+@pytest.mark.parametrize(
+    ("a", "b"),
+    [
+        (
+            {"a": slice(None, None, 3), "b": slice(1, 10, 2)},
+            {"b": slice(1, 10, 2), "a": slice(None, None, 3)},
+        ),
+        (None, None),
+    ],
+)
+def test_HashableIndexers(a, b):
+    assert a == b
+    hashable_indexers_a = xpartition.HashableIndexers(a)
+    hashable_indexers_b = xpartition.HashableIndexers(b)
+    assert hash(hashable_indexers_a) == hash(hashable_indexers_b)
+
+
+class CountingScheduler:
+    """Inspired by xarray
+    
+    https://github.com/pydata/xarray/blob/33fbb648ac042f821a11870ffa544e5bcb6e178f/xarray/tests/__init__.py#L97-L113
+    """
+
+    def __init__(self):
+        self.total_computes = 0
+
+    def __call__(self, dsk, keys, **kwargs):
+        self.total_computes += 1
+        return dask.get(dsk, keys, **kwargs)
+
+
+@pytest.mark.parametrize(
+    "indexers", [{"a": slice(None, None, 3), "b": slice(1, 10, 2)}, None]
+)
+def test_HashableIndexers_from_immutable_representation(indexers):
+    hashable_indexers = xpartition.HashableIndexers(indexers)
+    immutable_representation = hashable_indexers.immutable_representation
+    result = xpartition.HashableIndexers.from_immutable_representation(
+        immutable_representation
+    )
+    assert result == hashable_indexers
+
+
+def test_dataset_mappable_write_minimizes_compute_calls(tmpdir):
+    # This tests to ensure that calls to compute are minimized when writing
+    # partitioned Datasets.  Previously, a compute was called separately for
+    # each variable in the Dataset.  For fields that have common intermediates --
+    # e.g. loading a particular variable from somewhere -- this is inefficient,
+    # because it means these intermediates must be computed multiple times.
+    store = os.path.join(tmpdir, "test.zarr")
+
+    foo = _construct_dataarray((2, 9), (2, 3), "foo")
+    bar = (2 * foo).rename("bar")
+    ds = xr.merge([foo, bar])
+
+    ds.partition.initialize_store(store)
+    scheduler = CountingScheduler()
+
+    with dask.config.set(scheduler=scheduler):
+        ranks = 3
+        for rank in range(ranks):
+            ds.partition.write(store, ranks, ds.dims, rank)
+
+        assert scheduler.total_computes == ranks
+
+        result = xr.open_zarr(store)
+        xr.testing.assert_identical(result, ds)
