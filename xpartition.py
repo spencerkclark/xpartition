@@ -215,12 +215,8 @@ def _collect_by_partition(
         if isinstance(da.data, dask.array.Array):
             partition_dims = [dim for dim in dims if dim in da.dims]
             indexers = da.partition.indexers(ranks, rank, partition_dims)
-            if indexers is not None:
-                # We can ignore DataArrays whose indexers are None, because it
-                # means that no data needs to be written out from them on this
-                # rank.
-                key = HashableIndexers(indexers)
-                dataarrays[key].append(da)
+            key = HashableIndexers(indexers)
+            dataarrays[key].append(da)
     return [(k.indexers, xr.merge(v)) for k, v in dataarrays.items()]
 
 
@@ -229,7 +225,8 @@ def _write_partition_dataset(
 ):
     collected_by_partition = _collect_by_partition(ds, ranks, dims, rank)
     for partition, d in collected_by_partition:
-        d.isel(partition).to_zarr(store, region=partition)
+        if partition is not None:
+            d.isel(partition).to_zarr(store, region=partition)
 
 
 class Map(Sequence):
