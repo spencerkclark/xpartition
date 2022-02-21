@@ -8,6 +8,7 @@ import xarray as xr
 import dataclasses
 import logging
 
+from dataclasses import dataclass
 from typing import Callable, Dict, Hashable, Sequence, Tuple, Mapping
 
 
@@ -188,9 +189,9 @@ def _write_partition_dataarray(
         ds.isel(partition).to_zarr(store, region=partition)
 
 
+@dataclass
 class HashableIndexers:
-    def __init__(self, indexers: Region):
-        self.indexers = indexers
+    indexers: Region
 
     @property
     def immutable_representation(self):
