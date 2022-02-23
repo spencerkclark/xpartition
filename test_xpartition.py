@@ -326,7 +326,10 @@ def test_dataset_mappable_write_minimizes_compute_calls(
     # partitioned Datasets.  Previously, a compute was called separately for
     # each variable in the Dataset.  For fields that have common intermediates --
     # e.g. loading a particular variable from somewhere -- this is inefficient,
-    # because it means these intermediates must be computed multiple times.
+    # because it means these intermediates must be computed multiple times.  If
+    # the option to collect_variable_writes is turned, however, we expect more
+    # computes to be called (one for each partition and data variable in the
+    # Dataset).
     store = os.path.join(tmpdir, "test.zarr")
 
     foo = _construct_dataarray((2, 9), (2, 3), "foo")
