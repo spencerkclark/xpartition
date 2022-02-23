@@ -260,6 +260,22 @@ def test_partition_indexers_invalid_rank_error():
 
 
 @pytest.mark.parametrize(
+    ("unfrozen_indexers", "frozen_indexers"),
+    [
+        (
+            {"a": slice(None, None, 3), "b": slice(1, 10, 2)},
+            (("a", (None, None, 3)), ("b", (1, 10, 2))),
+        ),
+        (None, None),
+    ],
+    ids=lambda x: f"{x}"
+)
+def test_freeze_unfreeze_indexers(unfrozen_indexers, frozen_indexers):
+    assert xpartition.freeze_indexers(unfrozen_indexers) == frozen_indexers
+    assert xpartition.unfreeze_indexers(frozen_indexers) == unfrozen_indexers
+
+
+@pytest.mark.parametrize(
     ("a", "b"),
     [
         (
@@ -268,12 +284,16 @@ def test_partition_indexers_invalid_rank_error():
         ),
         (None, None),
     ],
+    ids=lambda x: f"{x}"
 )
-def test_HashableIndexers(a, b):
+def test_hashability_of_frozen_indexers(a, b):
     assert a == b
-    hashable_indexers_a = xpartition.HashableIndexers(a)
-    hashable_indexers_b = xpartition.HashableIndexers(b)
-    assert hash(hashable_indexers_a) == hash(hashable_indexers_b)
+    frozen_indexers_a = xpartition.freeze_indexers(a)
+    frozen_indexers_b = xpartition.freeze_indexers(b)
+
+    # Despite having different key orders, the hashes of the frozen indexers
+    # should be equal.
+    assert hash(frozen_indexers_a) == hash(frozen_indexers_b)
 
 
 class CountingScheduler:
@@ -312,5 +332,5 @@ def test_dataset_mappable_write_minimizes_compute_calls(tmpdir):
 
         assert scheduler.total_computes == ranks
 
-        result = xr.open_zarr(store)
-        xr.testing.assert_identical(result, ds)
+    result = xr.open_zarr(store)
+    xr.testing.assert_identical(result, ds)

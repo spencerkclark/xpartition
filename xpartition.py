@@ -8,7 +8,6 @@ import xarray as xr
 import dataclasses
 import logging
 
-from dataclasses import dataclass
 from typing import Callable, Dict, Hashable, Sequence, Tuple, Mapping
 
 
@@ -189,19 +188,21 @@ def _write_partition_dataarray(
         ds.isel(partition).to_zarr(store, region=partition)
 
 
-@dataclass
-class HashableIndexers:
-    indexers: Region
-
-    @property
-    def immutable_representation(self):
-        if self.indexers is None:
-            return self.indexers
-        indexers = ((k, (s.start, s.stop, s.step)) for k, s in self.indexers.items())
+def freeze_indexers(indexers):
+    """Return an immutable (hashable) version of the indexers."""
+    if indexers is None:
+        return indexers
+    else:
+        indexers = ((k, (s.start, s.stop, s.step)) for k, s in indexers.items())
         return tuple(sorted(indexers, key=lambda x: x[0]))
 
-    def __hash__(self):
-        return hash(self.immutable_representation)
+
+def unfreeze_indexers(frozen_indexers):
+    """Convert an immutable version of the indexers back to its usual type."""
+    if frozen_indexers is None:
+        return frozen_indexers
+    else:
+        return {k: slice(*s) for k, s in frozen_indexers}
 
 
 def _collect_by_partition(
@@ -215,9 +216,8 @@ def _collect_by_partition(
         if isinstance(da.data, dask.array.Array):
             partition_dims = [dim for dim in dims if dim in da.dims]
             indexers = da.partition.indexers(ranks, rank, partition_dims)
-            key = HashableIndexers(indexers)
-            dataarrays[key].append(da)
-    return [(k.indexers, xr.merge(v)) for k, v in dataarrays.items()]
+            dataarrays[freeze_indexers(indexers)].append(da)
+    return [(unfreeze_indexers(k), xr.merge(v)) for k, v in dataarrays.items()]
 
 
 def _write_partition_dataset(
