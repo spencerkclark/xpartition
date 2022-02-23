@@ -140,12 +140,18 @@ def ds():
 
 @pytest.mark.filterwarnings("ignore:Specified Dask chunks")
 @pytest.mark.parametrize("ranks", [1, 2, 3, 5, 10, 11])
-def test_dataset_mappable_write(tmpdir, ds, ranks):
+@pytest.mark.parametrize("collect_variable_writes", [False, True])
+def test_dataset_mappable_write(tmpdir, ds, ranks, collect_variable_writes):
     store = os.path.join(tmpdir, "test.zarr")
     ds.partition.initialize_store(store)
 
     with multiprocessing.get_context("spawn").Pool(ranks) as pool:
-        pool.map(ds.partition.mappable_write(store, ranks, ds.dims), range(ranks))
+        pool.map(
+            ds.partition.mappable_write(
+                store, ranks, ds.dims, collect_variable_writes=collect_variable_writes
+            ),
+            range(ranks),
+        )
 
     result = xr.open_zarr(store)
     xr.testing.assert_identical(result, ds)
@@ -310,7 +316,12 @@ class CountingScheduler:
         return dask.get(dsk, keys, **kwargs)
 
 
-def test_dataset_mappable_write_minimizes_compute_calls(tmpdir):
+@pytest.mark.parametrize(
+    ("collect_variable_writes", "expected_computes"), [(True, 6), (False, 3)]
+)
+def test_dataset_mappable_write_minimizes_compute_calls(
+    tmpdir, collect_variable_writes, expected_computes
+):
     # This tests to ensure that calls to compute are minimized when writing
     # partitioned Datasets.  Previously, a compute was called separately for
     # each variable in the Dataset.  For fields that have common intermediates --
@@ -328,9 +339,9 @@ def test_dataset_mappable_write_minimizes_compute_calls(tmpdir):
     with dask.config.set(scheduler=scheduler):
         ranks = 3
         for rank in range(ranks):
-            ds.partition.write(store, ranks, ds.dims, rank)
+            ds.partition.write(store, ranks, ds.dims, rank, collect_variable_writes)
 
-        assert scheduler.total_computes == ranks
+        assert scheduler.total_computes == expected_computes
 
     result = xr.open_zarr(store)
     xr.testing.assert_identical(result, ds)
