@@ -268,7 +268,7 @@ def test_partition_indexers_invalid_rank_error():
         ),
         (None, None),
     ],
-    ids=lambda x: f"{x}"
+    ids=lambda x: f"{x}",
 )
 def test_freeze_unfreeze_indexers(unfrozen_indexers, frozen_indexers):
     assert xpartition.freeze_indexers(unfrozen_indexers) == frozen_indexers
@@ -284,7 +284,7 @@ def test_freeze_unfreeze_indexers(unfrozen_indexers, frozen_indexers):
         ),
         (None, None),
     ],
-    ids=lambda x: f"{x}"
+    ids=lambda x: f"{x}",
 )
 def test_hashability_of_frozen_indexers(a, b):
     assert a == b
