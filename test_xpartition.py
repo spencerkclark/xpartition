@@ -317,7 +317,7 @@ class CountingScheduler:
 
 
 @pytest.mark.parametrize(
-    ("collect_variable_writes", "expected_computes"), [(True, 6), (False, 3)]
+    ("collect_variable_writes", "expected_computes"), [(False, 6), (True, 3)]
 )
 def test_dataset_mappable_write_minimizes_compute_calls(
     tmpdir, collect_variable_writes, expected_computes
