@@ -448,6 +448,10 @@ class PartitionDatasetAccessor:
             loaded twice; with this option set to True, it the input data would
             only need to be computed or loaded once.  A caveat, however, is that
             it can increase memory usage.
+
+        Returns
+        -------
+        function
         """
         if collect_variable_writes:
             f = _write_partition_dataset_via_collected_variables
