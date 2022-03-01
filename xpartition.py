@@ -8,14 +8,16 @@ import xarray as xr
 import dataclasses
 import logging
 
-from typing import Callable, Dict, Hashable, Sequence, Tuple, Mapping
+from typing import Callable, Dict, Hashable, Mapping, Sequence, Tuple, Union
 
 
 __version__ = "0.2.0"
 
 
-Region = Sequence[Mapping[Hashable, slice]]
+Region = Union[None, Mapping[Hashable, slice]]
 Partition = Sequence[Region]
+HashableSlice = Tuple[Union[None, int], Union[None, int], Union[None, int]]
+HashableIndexers = Union[None, Tuple[Tuple[Hashable, HashableSlice], ...]]
 
 
 def _is_integer(value):
@@ -188,16 +190,16 @@ def _write_partition_dataarray(
         ds.isel(partition).to_zarr(store, region=partition)
 
 
-def freeze_indexers(indexers):
+def freeze_indexers(indexers: Region) -> HashableIndexers:
     """Return an immutable (hashable) version of the indexers."""
     if indexers is None:
         return indexers
     else:
-        indexers = ((k, (s.start, s.stop, s.step)) for k, s in indexers.items())
-        return tuple(sorted(indexers, key=lambda x: x[0]))
+        immutable = ((k, (s.start, s.stop, s.step)) for k, s in indexers.items())
+        return tuple(sorted(immutable, key=lambda x: x[0]))
 
 
-def unfreeze_indexers(frozen_indexers):
+def unfreeze_indexers(frozen_indexers: HashableIndexers) -> Region:
     """Convert an immutable version of the indexers back to its usual type."""
     if frozen_indexers is None:
         return frozen_indexers
@@ -388,6 +390,30 @@ class PartitionDatasetAccessor:
         rank: int,
         collect_variable_writes: bool = False,
     ):
+        """Write a Dataset partition to disk on a given rank.
+        
+        Parameters
+        ----------
+        store : str
+            Path to zarr store.
+        ranks : int
+            Total number of ranks available to partition across.
+        dims : Sequence[Hashable]
+            Dimensions to partition among; if a dimension is left out
+            no partitions will be made along that dimension.
+        rank : int
+            Rank of process to write partition from.
+        collect_variable_writes : bool
+            Whether to collect data variables with like partition indexers
+            together when writing data out to disk (default False).  It can
+            be beneficial to set this to True if data variables in the Dataset
+            have like chunk structure, and also share intermediate data.  An
+            example of this would be two fields that derive from the same
+            input data.  By default this input data would need be computed or
+            loaded twice; with this option set to True, it the input data would
+            only need to be computed or loaded once.  A caveat, however, is that
+            it can increase memory usage. 
+        """
         if collect_variable_writes:
             f = _write_partition_dataset_via_collected_variables
         else:
@@ -401,6 +427,29 @@ class PartitionDatasetAccessor:
         dims: Sequence[Hashable],
         collect_variable_writes: bool = False,
     ) -> Callable[[int], None]:
+        """Return a function that can write data for a partition on a rank.
+        
+        Parameters
+        ----------
+        store : str
+            Path to zarr store.
+        ranks : int
+            Total number of ranks available to partition across.
+        dims : Sequence[Hashable]
+            Dimensions to partition among; if a dimension is left out
+            no partitions will be made along that dimension.
+        collect_variable_writes : bool
+            Whether to collect data variables with like partition indexers
+            together when writing data out to disk (default False).  It can
+            be beneficial to set this to True if data variables in the Dataset
+            have like chunk structure, and also share intermediate data.  An
+            example of this would be two fields that derive from the same
+            input data.  By default this input data would need be computed or
+            loaded twice; with this option set to True, it the input data would
+            only need to be computed or loaded once.  A caveat, however, is that
+            it can increase memory usage. 
+        
+        """
         if collect_variable_writes:
             f = _write_partition_dataset_via_collected_variables
         else:
