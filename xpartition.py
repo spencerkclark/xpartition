@@ -391,7 +391,7 @@ class PartitionDatasetAccessor:
         collect_variable_writes: bool = False,
     ):
         """Write a Dataset partition to disk on a given rank.
-        
+
         Parameters
         ----------
         store : str
@@ -412,7 +412,7 @@ class PartitionDatasetAccessor:
             input data.  By default this input data would need be computed or
             loaded twice; with this option set to True, it the input data would
             only need to be computed or loaded once.  A caveat, however, is that
-            it can increase memory usage. 
+            it can increase memory usage.
         """
         if collect_variable_writes:
             f = _write_partition_dataset_via_collected_variables
@@ -428,7 +428,7 @@ class PartitionDatasetAccessor:
         collect_variable_writes: bool = False,
     ) -> Callable[[int], None]:
         """Return a function that can write data for a partition on a rank.
-        
+
         Parameters
         ----------
         store : str
@@ -447,8 +447,7 @@ class PartitionDatasetAccessor:
             input data.  By default this input data would need be computed or
             loaded twice; with this option set to True, it the input data would
             only need to be computed or loaded once.  A caveat, however, is that
-            it can increase memory usage. 
-        
+            it can increase memory usage.
         """
         if collect_variable_writes:
             f = _write_partition_dataset_via_collected_variables
