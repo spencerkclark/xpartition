@@ -1,3 +1,4 @@
+import collections
 import functools
 import math
 
@@ -7,14 +8,16 @@ import xarray as xr
 import dataclasses
 import logging
 
-from typing import Callable, Dict, Hashable, Sequence, Tuple, Mapping
+from typing import Callable, Dict, Hashable, Mapping, Sequence, Tuple, Union
 
 
 __version__ = "0.2.0"
 
 
-Region = Sequence[Mapping[Hashable, slice]]
+Region = Union[None, Mapping[Hashable, slice]]
 Partition = Sequence[Region]
+HashableSlice = Tuple[Union[None, int], Union[None, int], Union[None, int]]
+HashableIndexers = Union[None, Tuple[Tuple[Hashable, HashableSlice], ...]]
 
 
 def _is_integer(value):
@@ -187,13 +190,54 @@ def _write_partition_dataarray(
         ds.isel(partition).to_zarr(store, region=partition)
 
 
-def _write_partition_dataset(
+def freeze_indexers(indexers: Region) -> HashableIndexers:
+    """Return an immutable (hashable) version of the indexers."""
+    if indexers is None:
+        return indexers
+    else:
+        immutable = ((k, (s.start, s.stop, s.step)) for k, s in indexers.items())
+        return tuple(sorted(immutable, key=lambda x: x[0]))
+
+
+def unfreeze_indexers(frozen_indexers: HashableIndexers) -> Region:
+    """Convert an immutable version of the indexers back to its usual type."""
+    if frozen_indexers is None:
+        return frozen_indexers
+    else:
+        return {k: slice(*s) for k, s in frozen_indexers}
+
+
+def _collect_by_partition(
+    ds: xr.Dataset, ranks: int, dims: Sequence[Hashable], rank: int
+) -> Sequence[Tuple[Region, xr.Dataset]]:
+    """Return a list of pairs of partitions and Datasets containing
+    DataArrays that can be written out to those partitions.
+    """
+    dataarrays = collections.defaultdict(list)
+    for da in ds.data_vars.values():
+        if isinstance(da.data, dask.array.Array):
+            partition_dims = [dim for dim in dims if dim in da.dims]
+            indexers = da.partition.indexers(ranks, rank, partition_dims)
+            dataarrays[freeze_indexers(indexers)].append(da)
+    return [(unfreeze_indexers(k), xr.merge(v)) for k, v in dataarrays.items()]
+
+
+def _write_partition_dataset_via_individual_variables(
     ds: xr.Dataset, store: str, ranks: int, dims: Sequence[Hashable], rank: int
 ):
     for da in ds.data_vars.values():
         if isinstance(da.data, dask.array.Array):
             partition_dims = [dim for dim in dims if dim in da.dims]
             da.partition.write(store, ranks, partition_dims, rank)
+
+
+def _write_partition_dataset_via_collected_variables(
+    ds: xr.Dataset, store: str, ranks: int, dims: Sequence[Hashable], rank: int
+):
+    collected_by_partition = _collect_by_partition(ds, ranks, dims, rank)
+    for partition, d in collected_by_partition:
+        if partition is not None:
+            d.isel(partition).to_zarr(store, region=partition)
 
 
 class Map(Sequence):
@@ -338,15 +382,82 @@ class PartitionDatasetAccessor:
     def initialize_store(self, store: str):
         self._obj.to_zarr(store, compute=False)
 
-    def write(self, store: str, ranks: int, dims: Sequence[Hashable], rank: int):
-        _write_partition_dataset(self._obj, store, ranks, dims, rank)
+    def write(
+        self,
+        store: str,
+        ranks: int,
+        dims: Sequence[Hashable],
+        rank: int,
+        collect_variable_writes: bool = False,
+    ):
+        """Write a Dataset partition to disk on a given rank.
+
+        Parameters
+        ----------
+        store : str
+            Path to zarr store.
+        ranks : int
+            Total number of ranks available to partition across.
+        dims : Sequence[Hashable]
+            Dimensions to partition among; if a dimension is left out
+            no partitions will be made along that dimension.
+        rank : int
+            Rank of process to write partition from.
+        collect_variable_writes : bool
+            Whether to collect data variables with like partition indexers
+            together when writing data out to disk (default False).  It can
+            be beneficial to set this to True if data variables in the Dataset
+            have like chunk structure, and also share intermediate data.  An
+            example of this would be two fields that derive from the same
+            input data.  By default this input data would need be computed or
+            loaded twice; with this option set to True, it the input data would
+            only need to be computed or loaded once.  A caveat, however, is that
+            it can increase memory usage.
+        """
+        if collect_variable_writes:
+            f = _write_partition_dataset_via_collected_variables
+        else:
+            f = _write_partition_dataset_via_individual_variables
+        f(self._obj, store, ranks, dims, rank)
 
     def mappable_write(
-        self, store: str, ranks: int, dims: Sequence[Hashable]
+        self,
+        store: str,
+        ranks: int,
+        dims: Sequence[Hashable],
+        collect_variable_writes: bool = False,
     ) -> Callable[[int], None]:
-        return functools.partial(
-            _write_partition_dataset, self._obj, store, ranks, dims
-        )
+        """Return a function that can write data for a partition on a rank.
+
+        Parameters
+        ----------
+        store : str
+            Path to zarr store.
+        ranks : int
+            Total number of ranks available to partition across.
+        dims : Sequence[Hashable]
+            Dimensions to partition among; if a dimension is left out
+            no partitions will be made along that dimension.
+        collect_variable_writes : bool
+            Whether to collect data variables with like partition indexers
+            together when writing data out to disk (default False).  It can
+            be beneficial to set this to True if data variables in the Dataset
+            have like chunk structure, and also share intermediate data.  An
+            example of this would be two fields that derive from the same
+            input data.  By default this input data would need be computed or
+            loaded twice; with this option set to True, it the input data would
+            only need to be computed or loaded once.  A caveat, however, is that
+            it can increase memory usage.
+
+        Returns
+        -------
+        function
+        """
+        if collect_variable_writes:
+            f = _write_partition_dataset_via_collected_variables
+        else:
+            f = _write_partition_dataset_via_individual_variables
+        return functools.partial(f, self._obj, store, ranks, dims)
 
 
 def _merge_chunks(arr, override_chunks):

@@ -140,12 +140,18 @@ def ds():
 
 @pytest.mark.filterwarnings("ignore:Specified Dask chunks")
 @pytest.mark.parametrize("ranks", [1, 2, 3, 5, 10, 11])
-def test_dataset_mappable_write(tmpdir, ds, ranks):
+@pytest.mark.parametrize("collect_variable_writes", [False, True])
+def test_dataset_mappable_write(tmpdir, ds, ranks, collect_variable_writes):
     store = os.path.join(tmpdir, "test.zarr")
     ds.partition.initialize_store(store)
 
     with multiprocessing.get_context("spawn").Pool(ranks) as pool:
-        pool.map(ds.partition.mappable_write(store, ranks, ds.dims), range(ranks))
+        pool.map(
+            ds.partition.mappable_write(
+                store, ranks, ds.dims, collect_variable_writes=collect_variable_writes
+            ),
+            range(ranks),
+        )
 
     result = xr.open_zarr(store)
     xr.testing.assert_identical(result, ds)
@@ -257,3 +263,88 @@ def test_partition_indexers_invalid_rank_error():
     da = xr.DataArray(data, dims=["x", "y"])
     with pytest.raises(ValueError, match="greater than maximum rank"):
         da.partition.indexers(1, 1, ["x"])
+
+
+@pytest.mark.parametrize(
+    ("unfrozen_indexers", "frozen_indexers"),
+    [
+        (
+            {"a": slice(None, None, 3), "b": slice(1, 10, 2)},
+            (("a", (None, None, 3)), ("b", (1, 10, 2))),
+        ),
+        (None, None),
+    ],
+    ids=lambda x: f"{x}",
+)
+def test_freeze_unfreeze_indexers(unfrozen_indexers, frozen_indexers):
+    assert xpartition.freeze_indexers(unfrozen_indexers) == frozen_indexers
+    assert xpartition.unfreeze_indexers(frozen_indexers) == unfrozen_indexers
+
+
+@pytest.mark.parametrize(
+    ("a", "b"),
+    [
+        (
+            {"a": slice(None, None, 3), "b": slice(1, 10, 2)},
+            {"b": slice(1, 10, 2), "a": slice(None, None, 3)},
+        ),
+        (None, None),
+    ],
+    ids=lambda x: f"{x}",
+)
+def test_hashability_of_frozen_indexers(a, b):
+    assert a == b
+    frozen_indexers_a = xpartition.freeze_indexers(a)
+    frozen_indexers_b = xpartition.freeze_indexers(b)
+
+    # Despite having different key orders, the hashes of the frozen indexers
+    # should be equal.
+    assert hash(frozen_indexers_a) == hash(frozen_indexers_b)
+
+
+class CountingScheduler:
+    """Inspired by xarray
+
+    https://github.com/pydata/xarray/blob/33fbb648ac042f821a11870ffa544e5bcb6e178f/xarray/tests/__init__.py#L97-L113
+    """
+
+    def __init__(self):
+        self.total_computes = 0
+
+    def __call__(self, dsk, keys, **kwargs):
+        self.total_computes += 1
+        return dask.get(dsk, keys, **kwargs)
+
+
+@pytest.mark.parametrize(
+    ("collect_variable_writes", "expected_computes"), [(False, 6), (True, 3)]
+)
+def test_dataset_mappable_write_minimizes_compute_calls(
+    tmpdir, collect_variable_writes, expected_computes
+):
+    # This tests to ensure that calls to compute are minimized when writing
+    # partitioned Datasets.  Previously, a compute was called separately for
+    # each variable in the Dataset.  For fields that have common intermediates --
+    # e.g. loading a particular variable from somewhere -- this is inefficient,
+    # because it means these intermediates must be computed multiple times.  If
+    # the option to collect_variable_writes is turned, however, we expect more
+    # computes to be called (one for each partition and data variable in the
+    # Dataset).
+    store = os.path.join(tmpdir, "test.zarr")
+
+    foo = _construct_dataarray((2, 9), (2, 3), "foo")
+    bar = (2 * foo).rename("bar")
+    ds = xr.merge([foo, bar])
+
+    ds.partition.initialize_store(store)
+    scheduler = CountingScheduler()
+
+    with dask.config.set(scheduler=scheduler):
+        ranks = 3
+        for rank in range(ranks):
+            ds.partition.write(store, ranks, ds.dims, rank, collect_variable_writes)
+
+        assert scheduler.total_computes == expected_computes
+
+    result = xr.open_zarr(store)
+    xr.testing.assert_identical(result, ds)
