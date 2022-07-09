@@ -117,13 +117,13 @@ bash write_zarr.sh /path/to/store.zarr
 It is not always advantageous to let all computations be controlled by a single
 dask client.  At the moment, the dask scheduler breaks down when having to
 manage a large number of memory-intensive tasks, often leading to slowdowns or
-out of memory errors (see [this
-issue](https://github.com/dask/distributed/issues/2602) for more discussion).
-Breaking the problem down in the way that `xpartition` does, allows you to gain
-the benefits of dask's laziness on each independent process, while working in a
-distributed environment.  *In an ideal world we wouldn't need a package like
-this -- we would let dask and dask distributed handle everything -- but in
-practice that does not work perfectly yet.*
+out of memory errors ([this issue](https://github.com/dask/distributed/issues/6360) 
+is perhaps a good summary of the state of things currently in dask). Breaking the 
+problem down in the way that `xpartition` does, allows you to gain the benefits of
+dask's laziness on each independent process, while working in a distributed 
+environment.  *In an ideal world we wouldn't need a package like this -- we would 
+let dask and dask distributed handle everything -- but in practice that does not 
+work perfectly yet.*
 
 ## Installation
 
