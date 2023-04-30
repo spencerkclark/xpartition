@@ -36,7 +36,13 @@ import xpartition
 
 from external import construct_lazy_dataset
 
+parser = argparse.ArgumentParser(
+    prog="initialize_store",
+    description="initialize a zarr store for a dataset"
+)
 parser.add_argument("store", help="absolute path to directory to store zarr result")
+
+args = parser.parse_args()
 ds = construct_lazy_dataset()
 ds.partition.initialize_store(args.store)
 ```
@@ -49,7 +55,10 @@ import xpartition
 
 from external import construct_lazy_dataset
 
-
+parser = argparse.ArgumentParser(
+    prog="write_partition",
+    description="write a partition of a dataset"
+)
 parser.add_argument("store", help="absolute path to directory to store zarr result")
 parser.add_argument("ranks", type=int, help="total number of available ranks")
 parser.add_argument("rank", type=int, help="rank of job")
