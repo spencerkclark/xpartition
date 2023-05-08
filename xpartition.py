@@ -184,7 +184,7 @@ class BlocksAccessor:
 def _write_partition_dataarray(
     da: xr.DataArray, store: str, ranks: int, dims: Sequence[Hashable], rank: int
 ):
-    ds = da.to_dataset()
+    ds = da.drop_vars(da.coords).to_dataset()
     partition = da.partition.indexers(ranks, rank, dims)
     if partition is not None:
         ds.isel(partition).to_zarr(store, region=partition)
@@ -214,21 +214,21 @@ def _collect_by_partition(
     DataArrays that can be written out to those partitions.
     """
     dataarrays = collections.defaultdict(list)
-    for da in ds.data_vars.values():
+    for da in {**ds.coords, **ds.data_vars}.values():
         if isinstance(da.data, dask.array.Array):
             partition_dims = [dim for dim in dims if dim in da.dims]
             indexers = da.partition.indexers(ranks, rank, partition_dims)
-            dataarrays[freeze_indexers(indexers)].append(da)
+            dataarrays[freeze_indexers(indexers)].append(da.drop_vars(da.coords))
     return [(unfreeze_indexers(k), xr.merge(v)) for k, v in dataarrays.items()]
 
 
 def _write_partition_dataset_via_individual_variables(
     ds: xr.Dataset, store: str, ranks: int, dims: Sequence[Hashable], rank: int
 ):
-    for da in ds.data_vars.values():
+    for da in {**ds.coords, **ds.data_vars}.values():
         if isinstance(da.data, dask.array.Array):
             partition_dims = [dim for dim in dims if dim in da.dims]
-            da.partition.write(store, ranks, partition_dims, rank)
+            _write_partition_dataarray(da, store, ranks, partition_dims, rank)
 
 
 def _write_partition_dataset_via_collected_variables(
@@ -353,14 +353,27 @@ class PartitionDataArrayAccessor:
             dask_indexers = meta_array.blocks.indexers(**meta_indexers)
             return self._obj.blocks.indexers(**dask_indexers)
 
-    def write(self, store: str, ranks: int, dims: Sequence[Hashable], rank: int):
-        _write_partition_dataarray(self._obj, store, ranks, dims, rank)
+    def write(
+        self,
+        store: str,
+        ranks: int,
+        dims: Sequence[Hashable],
+        rank: int,
+        collect_variable_writes: bool = False,
+    ):
+        self.to_dataset().partition.write(
+            store, ranks, dims, rank, collect_variable_writes
+        )
 
     def mappable_write(
-        self, store: str, ranks: int, dims: Sequence[Hashable]
+        self,
+        store: str,
+        ranks: int,
+        dims: Sequence[Hashable],
+        collect_variable_writes: bool = False,
     ) -> Callable[[int], None]:
-        return functools.partial(
-            _write_partition_dataarray, self._obj, store, ranks, dims
+        return self._obj.to_dataset().partition.mappable_write(
+            store, ranks, dims, collect_variable_writes
         )
 
     @property
@@ -510,7 +523,6 @@ class _ValidWorkPlan:
     """
 
     def __init__(self, partitioner, ranks: int, dims: Sequence[Hashable]):
-
         self._partitioner = partitioner
         self._ranks = ranks
         self.dims = dims

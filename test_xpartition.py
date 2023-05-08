@@ -100,10 +100,15 @@ def da(request):
 def _construct_dataarray(shape, chunks, name):
     dims = list(string.ascii_lowercase[: len(shape)])
     data = np.random.random(shape)
-    da = xr.DataArray(data, dims=dims, name=name)
+    coords = [range(length) for length in shape]
+    da = xr.DataArray(data, dims=dims, name=name, coords=coords)
     if chunks is not None:
         chunks = {dim: chunk for dim, chunk in zip(dims, chunks)}
         da = da.chunk(chunks)
+
+        # Add coverage for chunked coordinates
+        chunked_coord_name = f"{da.name}_chunked_coord"
+        da = da.assign_coords({chunked_coord_name: da.chunk(chunks)})
     return da
 
 
@@ -138,12 +143,23 @@ def ds():
     return xr.merge(unchunked_dataarrays + chunked_dataarrays)
 
 
+def get_unchunked_modification_times(ds, store):
+    modification_times = {}
+    for name, variable in ds.variables.items():
+        if not isinstance(variable.data, dask.array.Array):
+            blob_name = ".".join(["0" for _ in variable.dims])
+            blob_path = os.path.join(store, name, blob_name)
+            modification_times[name] = os.path.getmtime(blob_path)
+    return modification_times
+
+
 @pytest.mark.filterwarnings("ignore:Specified Dask chunks")
 @pytest.mark.parametrize("ranks", [1, 2, 3, 5, 10, 11])
 @pytest.mark.parametrize("collect_variable_writes", [False, True])
 def test_dataset_mappable_write(tmpdir, ds, ranks, collect_variable_writes):
     store = os.path.join(tmpdir, "test.zarr")
     ds.partition.initialize_store(store)
+    expected_modification_times = get_unchunked_modification_times(ds, store)
 
     with multiprocessing.get_context("spawn").Pool(ranks) as pool:
         pool.map(
@@ -154,6 +170,11 @@ def test_dataset_mappable_write(tmpdir, ds, ranks, collect_variable_writes):
         )
 
     result = xr.open_zarr(store)
+    resulting_modification_times = get_unchunked_modification_times(ds, store)
+
+    # This checks that all unchunked variables in the dataset were written
+    # only once, upon initialization of the store.
+    assert expected_modification_times == resulting_modification_times
     xr.testing.assert_identical(result, ds)
 
 
@@ -317,7 +338,7 @@ class CountingScheduler:
 
 
 @pytest.mark.parametrize(
-    ("collect_variable_writes", "expected_computes"), [(False, 6), (True, 3)]
+    ("collect_variable_writes", "expected_computes"), [(False, 9), (True, 3)]
 )
 def test_dataset_mappable_write_minimizes_compute_calls(
     tmpdir, collect_variable_writes, expected_computes
