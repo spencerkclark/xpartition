@@ -11,7 +11,7 @@ import logging
 from typing import Callable, Dict, Hashable, Mapping, Sequence, Tuple, Union
 
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 
 Region = Union[None, Mapping[Hashable, slice]]
