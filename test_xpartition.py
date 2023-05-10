@@ -199,7 +199,7 @@ def test_dataset_mappable_write(tmpdir, ds, ranks, collect_variable_writes):
 
     # Checkpoint modification times of all files associated with unchunked
     # variables after writing the chunked variables.  The modification times of
-    # the unchunked variables should be same as before writing the chunked
+    # the unchunked variables should be the same as before writing the chunked
     # variables.
     resulting_times = checkpoint_modification_times(store, unchunked_variables)
     assert expected_times == resulting_times
