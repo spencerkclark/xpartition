@@ -100,10 +100,15 @@ def da(request):
 def _construct_dataarray(shape, chunks, name):
     dims = list(string.ascii_lowercase[: len(shape)])
     data = np.random.random(shape)
-    da = xr.DataArray(data, dims=dims, name=name)
+    coords = [range(length) for length in shape]
+    da = xr.DataArray(data, dims=dims, name=name, coords=coords)
     if chunks is not None:
         chunks = {dim: chunk for dim, chunk in zip(dims, chunks)}
         da = da.chunk(chunks)
+
+        # Add coverage for chunked coordinates
+        chunked_coord_name = f"{da.name}_chunked_coord"
+        da = da.assign_coords({chunked_coord_name: da.chunk(chunks)})
     return da
 
 
@@ -138,12 +143,46 @@ def ds():
     return xr.merge(unchunked_dataarrays + chunked_dataarrays)
 
 
+def get_files(directory):
+    names = os.listdir(directory)
+    files = []
+    for name in names:
+        path = os.path.join(directory, name)
+        if os.path.isfile(path):
+            files.append(path)
+    return files
+
+
+def get_unchunked_variable_names(ds):
+    names = []
+    for name, variable in ds.variables.items():
+        if not isinstance(variable.data, dask.array.Array):
+            names.append(name)
+    return names
+
+
+def checkpoint_modification_times(store, variables):
+    times = {}
+    for variable in variables:
+        directory = os.path.join(store, variable)
+        files = get_files(directory)
+        for file in files:
+            times[file] = os.path.getmtime(file)
+    return times
+
+
 @pytest.mark.filterwarnings("ignore:Specified Dask chunks")
 @pytest.mark.parametrize("ranks", [1, 2, 3, 5, 10, 11])
 @pytest.mark.parametrize("collect_variable_writes", [False, True])
 def test_dataset_mappable_write(tmpdir, ds, ranks, collect_variable_writes):
+    unchunked_variables = get_unchunked_variable_names(ds)
+
     store = os.path.join(tmpdir, "test.zarr")
     ds.partition.initialize_store(store)
+
+    # Checkpoint modification times of all files associated with unchunked
+    # variables.  These should remain unchanged after initialization.
+    expected_times = checkpoint_modification_times(store, unchunked_variables)
 
     with multiprocessing.get_context("spawn").Pool(ranks) as pool:
         pool.map(
@@ -154,7 +193,16 @@ def test_dataset_mappable_write(tmpdir, ds, ranks, collect_variable_writes):
         )
 
     result = xr.open_zarr(store)
+
+    # Check that dataset roundtrips identically.
     xr.testing.assert_identical(result, ds)
+
+    # Checkpoint modification times of all files associated with unchunked
+    # variables after writing the chunked variables.  The modification times of
+    # the unchunked variables should be the same as before writing the chunked
+    # variables.
+    resulting_times = checkpoint_modification_times(store, unchunked_variables)
+    assert expected_times == resulting_times
 
 
 @pytest.mark.parametrize("has_coord", [True, False])
@@ -317,7 +365,7 @@ class CountingScheduler:
 
 
 @pytest.mark.parametrize(
-    ("collect_variable_writes", "expected_computes"), [(False, 6), (True, 3)]
+    ("collect_variable_writes", "expected_computes"), [(False, 9), (True, 3)]
 )
 def test_dataset_mappable_write_minimizes_compute_calls(
     tmpdir, collect_variable_writes, expected_computes
