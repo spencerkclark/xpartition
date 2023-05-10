@@ -143,23 +143,46 @@ def ds():
     return xr.merge(unchunked_dataarrays + chunked_dataarrays)
 
 
-def get_unchunked_modification_times(ds, store):
-    modification_times = {}
+def get_files(directory):
+    names = os.listdir(directory)
+    files = []
+    for name in names:
+        path = os.path.join(directory, name)
+        if os.path.isfile(path):
+            files.append(path)
+    return files
+
+
+def get_unchunked_variable_names(ds):
+    names = []
     for name, variable in ds.variables.items():
         if not isinstance(variable.data, dask.array.Array):
-            blob_name = ".".join(["0" for _ in variable.dims])
-            blob_path = os.path.join(store, name, blob_name)
-            modification_times[name] = os.path.getmtime(blob_path)
-    return modification_times
+            names.append(name)
+    return names
+
+
+def checkpoint_modification_times(store, variables):
+    times = {}
+    for variable in variables:
+        directory = os.path.join(store, variable)
+        files = get_files(directory)
+        for file in files:
+            times[file] = os.path.getmtime(file)
+    return times
 
 
 @pytest.mark.filterwarnings("ignore:Specified Dask chunks")
 @pytest.mark.parametrize("ranks", [1, 2, 3, 5, 10, 11])
 @pytest.mark.parametrize("collect_variable_writes", [False, True])
 def test_dataset_mappable_write(tmpdir, ds, ranks, collect_variable_writes):
+    unchunked_variables = get_unchunked_variable_names(ds)
+
     store = os.path.join(tmpdir, "test.zarr")
     ds.partition.initialize_store(store)
-    expected_modification_times = get_unchunked_modification_times(ds, store)
+
+    # Checkpoint modification times of all files associated with unchunked
+    # variables.  These should remain unchanged after initialization.
+    expected_times = checkpoint_modification_times(store, unchunked_variables)
 
     with multiprocessing.get_context("spawn").Pool(ranks) as pool:
         pool.map(
@@ -170,12 +193,16 @@ def test_dataset_mappable_write(tmpdir, ds, ranks, collect_variable_writes):
         )
 
     result = xr.open_zarr(store)
-    resulting_modification_times = get_unchunked_modification_times(ds, store)
 
-    # This checks that all unchunked variables in the dataset were written
-    # only once, upon initialization of the store.
-    assert expected_modification_times == resulting_modification_times
+    # Check that dataset roundtrips identically.
     xr.testing.assert_identical(result, ds)
+
+    # Checkpoint modification times of all files associated with unchunked
+    # variables after writing the chunked variables.  The modification times of
+    # the unchunked variables should be same as before writing the chunked
+    # variables.
+    resulting_times = checkpoint_modification_times(store, unchunked_variables)
+    assert expected_times == resulting_times
 
 
 @pytest.mark.parametrize("has_coord", [True, False])
