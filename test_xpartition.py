@@ -219,10 +219,17 @@ def test_PartitionMapper_integration(tmpdir, has_coord, original_chunks):
     if has_coord:
         ds = ds.assign_coords(x=range(5))
 
+    unchunked_variables = get_unchunked_variable_names(ds)
+
     store = str(tmpdir)
     mapper = ds.z.partition.map(store, ranks=3, dims=["x"], func=func, data=ds)
-    for rank in mapper:
+    for i, rank in enumerate(mapper):
+        if i == 0:
+            expected_times = checkpoint_modification_times(store, unchunked_variables)
         mapper.write(rank)
+
+    resulting_times = checkpoint_modification_times(store, unchunked_variables)
+    assert expected_times == resulting_times
 
     written = xr.open_zarr(store)
     xr.testing.assert_identical(func(ds), written)
