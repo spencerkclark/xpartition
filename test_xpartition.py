@@ -401,3 +401,16 @@ def test_dataset_mappable_write_minimizes_compute_calls(
 
     result = xr.open_zarr(store)
     xr.testing.assert_identical(result, ds)
+
+
+def test_get_unchunked_variable_names():
+    a = xr.DataArray(
+        np.zeros((3, 5)), dims=["x", "y"], coords=[range(3), range(5)], name="a"
+    )
+    b = a.copy(deep=True).rename("b").chunk({"x": 1})
+    c = xr.DataArray(np.zeros(3), dims=["x"]).chunk({"x": 1})
+    ds = xr.merge([a, b])
+    ds = ds.assign_coords(c=c)
+    expected = {"x", "y", "a"}
+    result = set(xpartition.get_unchunked_variable_names(ds))
+    assert result == expected
