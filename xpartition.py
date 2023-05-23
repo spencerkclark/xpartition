@@ -536,6 +536,14 @@ class _ValidWorkPlan:
         return self._partitioner.partition(self._ranks, self.dims)
 
 
+def drop_unchunked_variables(ds):
+    unchunked = []
+    for name, da in {**ds.coords, **ds.data_vars}.items():
+        if isinstance(da.data, np.ndarray):
+            unchunked.append(name)
+    return ds.drop_vars(unchunked)
+
+
 @dataclasses.dataclass
 class PartitionMapper:
     """Evaluate a function on each region of a partition and store the output
@@ -572,7 +580,8 @@ class PartitionMapper:
         region = self.plan.input_partition[rank]
         iData = self.data.isel(region)
         iOut = self.func(iData)
-        iOut.drop(iOut.coords).to_zarr(self.path, region=region)
+        iOut = drop_unchunked_variables(iOut)
+        iOut.to_zarr(self.path, region=region)
         logging.info(f"Done writing {rank + 1}.")
 
     def __iter__(self):

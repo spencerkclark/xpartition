@@ -206,10 +206,13 @@ def test_dataset_mappable_write(tmpdir, ds, ranks, collect_variable_writes):
 
 
 @pytest.mark.parametrize("has_coord", [True, False])
+@pytest.mark.parametrize("has_chunked_coord", [True, False])
 @pytest.mark.parametrize(
     "original_chunks", [{"x": 2}, {"x": 2, "y": 5}], ids=lambda x: f"{x}"
 )
-def test_PartitionMapper_integration(tmpdir, has_coord, original_chunks):
+def test_PartitionMapper_integration(
+    tmpdir, has_coord, has_chunked_coord, original_chunks
+):
     def func(ds):
         return ds.rename(z="new_name").assign_attrs(dataset_attr="fun")
 
@@ -218,6 +221,9 @@ def test_PartitionMapper_integration(tmpdir, has_coord, original_chunks):
     )
     if has_coord:
         ds = ds.assign_coords(x=range(5))
+    if has_chunked_coord:
+        chunked_coord = xr.DataArray(range(5), dims=["x"]).chunk({"x": 5})
+        ds = ds.assign_coords(b=chunked_coord)
 
     unchunked_variables = get_unchunked_variable_names(ds)
 
