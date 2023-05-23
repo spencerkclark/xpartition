@@ -153,14 +153,6 @@ def get_files(directory):
     return files
 
 
-def get_unchunked_variable_names(ds):
-    names = []
-    for name, variable in ds.variables.items():
-        if not isinstance(variable.data, dask.array.Array):
-            names.append(name)
-    return names
-
-
 def checkpoint_modification_times(store, variables):
     times = {}
     for variable in variables:
@@ -175,7 +167,7 @@ def checkpoint_modification_times(store, variables):
 @pytest.mark.parametrize("ranks", [1, 2, 3, 5, 10, 11])
 @pytest.mark.parametrize("collect_variable_writes", [False, True])
 def test_dataset_mappable_write(tmpdir, ds, ranks, collect_variable_writes):
-    unchunked_variables = get_unchunked_variable_names(ds)
+    unchunked_variables = xpartition.get_unchunked_variable_names(ds)
 
     store = os.path.join(tmpdir, "test.zarr")
     ds.partition.initialize_store(store)
@@ -225,7 +217,7 @@ def test_PartitionMapper_integration(
         chunked_coord = xr.DataArray(range(5), dims=["x"]).chunk({"x": 5})
         ds = ds.assign_coords(b=chunked_coord)
 
-    unchunked_variables = get_unchunked_variable_names(ds)
+    unchunked_variables = xpartition.get_unchunked_variable_names(ds)
 
     store = str(tmpdir)
     mapper = ds.z.partition.map(store, ranks=3, dims=["x"], func=func, data=ds)
