@@ -233,6 +233,17 @@ def test_PartitionMapper_integration(
     xr.testing.assert_identical(func(ds), written)
 
 
+def test_PartitionMapper_integration_error():
+    func = lambda ds: ds
+    a = xr.DataArray(np.ones((5, 10)), [range(5), range(10)], ["x", "y"], name="a")
+    b = a.copy(deep=True).rename("b").chunk({"x": 1})
+    ds = xr.merge([a, b])
+    mapper = ds.b.partition.map("store", ranks=3, dims=["x"], func=func, data=ds)
+    with pytest.raises(ValueError, match="The PartitionMapper approach"):
+        for rank in mapper:
+            mapper.write(rank)
+
+
 def test_partition_partition():
     # Partitions have two qualities which we test using a DataArray that
     # has all unique values
@@ -403,15 +414,42 @@ def test_dataset_mappable_write_minimizes_compute_calls(
     xr.testing.assert_identical(result, ds)
 
 
-def test_get_unchunked_variable_names():
-    dims = ["x", "y"]
+@pytest.fixture()
+def mixed_ds():
+    dims = ["x_unchunked", "y_unchunked"]
     coords = [range(3), range(5)]
-    a = xr.DataArray(np.zeros((3, 5)), dims=dims, coords=coords, name="a")
-    b = a.copy(deep=True).rename("b").chunk({"x": 1})
-    c = a.copy(deep=True).rename("c").chunk({"x": 1})
-    ds = xr.merge([a, b])
-    ds = ds.assign_coords(c=c)
+    data = np.zeros((3, 5))
+    template_unchunked = xr.DataArray(data, coords, dims)
+    template_chunked = xr.DataArray(data, coords, dims).chunk({"x_unchunked": 1})
 
-    expected = {"x", "y", "a"}
-    result = set(xpartition.get_unchunked_variable_names(ds))
+    data_var_unchunked = template_unchunked.copy(deep=True).rename("data_var_unchunked")
+    data_var_chunked = template_chunked.copy(deep=True).rename("data_var_chunked")
+    coord_unchunked = template_unchunked.copy(deep=True).rename("coord_unchunked")
+    coord_chunked = template_chunked.copy(deep=True).rename("coord_chunked")
+
+    ds = xr.merge([data_var_chunked, data_var_unchunked])
+    ds = ds.assign_coords(coord_unchunked=coord_unchunked, coord_chunked=coord_chunked)
+    return ds
+
+
+def test_get_unchunked_variable_names(mixed_ds):
+    expected = {"x_unchunked", "y_unchunked", "data_var_unchunked", "coord_unchunked"}
+    result = set(xpartition.get_unchunked_variable_names(mixed_ds))
     assert result == expected
+
+
+def test_get_unchunked_non_dimension_coord_names(mixed_ds):
+    expected = {"coord_unchunked"}
+    result = set(xpartition.get_unchunked_non_dimension_coord_names(mixed_ds))
+    assert result == expected
+
+
+def test_get_unchunked_data_var_names(mixed_ds):
+    expected = {"data_var_unchunked"}
+    result = set(xpartition.get_unchunked_data_var_names(mixed_ds))
+    assert result == expected
+
+
+def test_validate_PartitionMapper_dataset(mixed_ds):
+    with pytest.raises(ValueError, match="The PartitionMapper approach"):
+        xpartition.validate_PartitionMapper_dataset(mixed_ds)
