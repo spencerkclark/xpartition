@@ -536,6 +536,44 @@ class _ValidWorkPlan:
         return self._partitioner.partition(self._ranks, self.dims)
 
 
+def get_unchunked_variable_names(ds):
+    unchunked = []
+    for name, variable in ds.variables.items():
+        if isinstance(variable.data, np.ndarray):
+            unchunked.append(name)
+    return unchunked
+
+
+def get_unchunked_non_dimension_coord_names(ds):
+    names = []
+    for name, da in ds.coords.items():
+        if name not in ds.dims and isinstance(da.data, np.ndarray):
+            names.append(name)
+    return names
+
+
+def get_unchunked_data_var_names(ds):
+    names = []
+    for name, da in ds.data_vars.items():
+        if isinstance(da.data, np.ndarray):
+            names.append(name)
+    return names
+
+
+def validate_PartitionMapper_dataset(ds):
+    unchunked_non_dimension_coords = get_unchunked_non_dimension_coord_names(ds)
+    unchunked_data_vars = get_unchunked_data_var_names(ds)
+    invalid_unchunked_vars = unchunked_non_dimension_coords + unchunked_data_vars
+    if invalid_unchunked_vars:
+        raise ValueError(
+            f"The PartitionMapper approach does not support writing datasets that "
+            f"contain unchunked non-dimension coordinates or data variables.  "
+            f"Consider dropping or chunking these before initiating the write or "
+            f"switching to the traditional xpartition writing approach.  The "
+            f"variables in question are {invalid_unchunked_vars!r}."
+        )
+
+
 @dataclasses.dataclass
 class PartitionMapper:
     """Evaluate a function on each region of a partition and store the output
@@ -555,6 +593,8 @@ class PartitionMapper:
         region = self.plan.input_partition[0]
         iData = self.data.isel(region)
         iOut = self.func(iData)
+        validate_PartitionMapper_dataset(iOut)
+
         full_indexers = {dim: self.data[dim] for dim in self.dims}
 
         dims_without_coords = (set(iOut.dims) - set(iOut.indexes)) & set(self.dims)
@@ -572,7 +612,8 @@ class PartitionMapper:
         region = self.plan.input_partition[rank]
         iData = self.data.isel(region)
         iOut = self.func(iData)
-        iOut.to_zarr(self.path, region=region)
+        unchunked_variables = get_unchunked_variable_names(iOut)
+        iOut.drop_vars(unchunked_variables).to_zarr(self.path, region=region)
         logging.info(f"Done writing {rank + 1}.")
 
     def __iter__(self):

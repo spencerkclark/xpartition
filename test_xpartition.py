@@ -153,14 +153,6 @@ def get_files(directory):
     return files
 
 
-def get_unchunked_variable_names(ds):
-    names = []
-    for name, variable in ds.variables.items():
-        if not isinstance(variable.data, dask.array.Array):
-            names.append(name)
-    return names
-
-
 def checkpoint_modification_times(store, variables):
     times = {}
     for variable in variables:
@@ -175,7 +167,7 @@ def checkpoint_modification_times(store, variables):
 @pytest.mark.parametrize("ranks", [1, 2, 3, 5, 10, 11])
 @pytest.mark.parametrize("collect_variable_writes", [False, True])
 def test_dataset_mappable_write(tmpdir, ds, ranks, collect_variable_writes):
-    unchunked_variables = get_unchunked_variable_names(ds)
+    unchunked_variables = xpartition.get_unchunked_variable_names(ds)
 
     store = os.path.join(tmpdir, "test.zarr")
     ds.partition.initialize_store(store)
@@ -206,10 +198,13 @@ def test_dataset_mappable_write(tmpdir, ds, ranks, collect_variable_writes):
 
 
 @pytest.mark.parametrize("has_coord", [True, False])
+@pytest.mark.parametrize("has_chunked_coord", [True, False])
 @pytest.mark.parametrize(
     "original_chunks", [{"x": 2}, {"x": 2, "y": 5}], ids=lambda x: f"{x}"
 )
-def test_PartitionMapper_integration(tmpdir, has_coord, original_chunks):
+def test_PartitionMapper_integration(
+    tmpdir, has_coord, has_chunked_coord, original_chunks
+):
     def func(ds):
         return ds.rename(z="new_name").assign_attrs(dataset_attr="fun")
 
@@ -218,14 +213,35 @@ def test_PartitionMapper_integration(tmpdir, has_coord, original_chunks):
     )
     if has_coord:
         ds = ds.assign_coords(x=range(5))
+    if has_chunked_coord:
+        chunked_coord = xr.DataArray(range(5), dims=["x"]).chunk({"x": 5})
+        ds = ds.assign_coords(b=chunked_coord)
+
+    unchunked_variables = xpartition.get_unchunked_variable_names(ds)
 
     store = str(tmpdir)
     mapper = ds.z.partition.map(store, ranks=3, dims=["x"], func=func, data=ds)
-    for rank in mapper:
+    for i, rank in enumerate(mapper):
+        if i == 0:
+            expected_times = checkpoint_modification_times(store, unchunked_variables)
         mapper.write(rank)
+
+    resulting_times = checkpoint_modification_times(store, unchunked_variables)
+    assert expected_times == resulting_times
 
     written = xr.open_zarr(store)
     xr.testing.assert_identical(func(ds), written)
+
+
+def test_PartitionMapper_integration_error():
+    func = lambda ds: ds
+    a = xr.DataArray(np.ones((5, 10)), [range(5), range(10)], ["x", "y"], name="a")
+    b = a.copy(deep=True).rename("b").chunk({"x": 1})
+    ds = xr.merge([a, b])
+    mapper = ds.b.partition.map("store", ranks=3, dims=["x"], func=func, data=ds)
+    with pytest.raises(ValueError, match="The PartitionMapper approach"):
+        for rank in mapper:
+            mapper.write(rank)
 
 
 def test_partition_partition():
@@ -396,3 +412,44 @@ def test_dataset_mappable_write_minimizes_compute_calls(
 
     result = xr.open_zarr(store)
     xr.testing.assert_identical(result, ds)
+
+
+@pytest.fixture()
+def mixed_ds():
+    dims = ["x_unchunked", "y_unchunked"]
+    coords = [range(3), range(5)]
+    data = np.zeros((3, 5))
+    template_unchunked = xr.DataArray(data, coords, dims)
+    template_chunked = xr.DataArray(data, coords, dims).chunk({"x_unchunked": 1})
+
+    data_var_unchunked = template_unchunked.copy(deep=True).rename("data_var_unchunked")
+    data_var_chunked = template_chunked.copy(deep=True).rename("data_var_chunked")
+    coord_unchunked = template_unchunked.copy(deep=True).rename("coord_unchunked")
+    coord_chunked = template_chunked.copy(deep=True).rename("coord_chunked")
+
+    ds = xr.merge([data_var_chunked, data_var_unchunked])
+    ds = ds.assign_coords(coord_unchunked=coord_unchunked, coord_chunked=coord_chunked)
+    return ds
+
+
+def test_get_unchunked_variable_names(mixed_ds):
+    expected = {"x_unchunked", "y_unchunked", "data_var_unchunked", "coord_unchunked"}
+    result = set(xpartition.get_unchunked_variable_names(mixed_ds))
+    assert result == expected
+
+
+def test_get_unchunked_non_dimension_coord_names(mixed_ds):
+    expected = {"coord_unchunked"}
+    result = set(xpartition.get_unchunked_non_dimension_coord_names(mixed_ds))
+    assert result == expected
+
+
+def test_get_unchunked_data_var_names(mixed_ds):
+    expected = {"data_var_unchunked"}
+    result = set(xpartition.get_unchunked_data_var_names(mixed_ds))
+    assert result == expected
+
+
+def test_validate_PartitionMapper_dataset(mixed_ds):
+    with pytest.raises(ValueError, match="The PartitionMapper approach"):
+        xpartition.validate_PartitionMapper_dataset(mixed_ds)
