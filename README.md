@@ -157,3 +157,4 @@ do, namely packages like:
 
 - [rechunker](https://github.com/pangeo-data/rechunker)
 - [pangeo-forge](https://github.com/pangeo-forge/pangeo-forge)
+- [xarray-beam](https://github.com/google/xarray-beam)
