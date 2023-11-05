@@ -14,8 +14,8 @@ The primary use-case is something like this.  Say you have a lot of netCDF files
 output from a simulation or observational dataset that you would like to stitch
 together into a zarr store.  If you have a way of combining those files lazily —
 i.e. opening them into dask-backed arrays — into a single dataset with maybe
-some additional light computations, then you can write contiguous "partitions"
-of that dataset out via independent processes.  A "partition" corresponds to a
+some additional computations, then you can write contiguous "partitions" of that
+dataset out via independent processes.  A "partition" corresponds to a
 contiguous group of dask "chunks." I.e. it can correspond to one or more chunks
 across any number of dimensions.  A key detail is no partition straddles any
 dask chunks; this makes writing from independent processes completely safe.
