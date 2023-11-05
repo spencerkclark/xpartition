@@ -51,10 +51,10 @@ for partition in range(partitions):
     ds.partition.write(store, partitions, partition_dims, partition)
 ```
 
-The `partition_dims` describe the dimensions over which to partition the
-dataset; if chunks exist along dimensions that are not among the partition
-dimensions, then they will all be grouped together.  If you are not particular
-about this, simply using `ds.dims` will also work out of the box.
+`partition_dims` describes the dimensions over which to partition the dataset;
+if chunks exist along dimensions that are not among the partition dimensions,
+then they will all be grouped together.  If you are not particular about this,
+simply using `ds.dims` will also work out of the box.
 
 ### Parallelization using `multiprocessing`
 
