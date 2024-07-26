@@ -1,15 +1,13 @@
 import collections
+import dataclasses
 import functools
+import logging
 import math
+from typing import Callable, Dict, Hashable, Mapping, Sequence, Tuple, Union
 
 import dask.array
 import numpy as np
 import xarray as xr
-import dataclasses
-import logging
-
-from typing import Callable, Dict, Hashable, Mapping, Sequence, Tuple, Union
-
 
 __version__ = "0.2.1"
 
@@ -296,7 +294,7 @@ class PartitionDataArrayAccessor:
             for d, s in chunk_sizes.items():
                 block_size = math.ceil(self._obj.blocks.sizes[d] / s)
                 block_sizes.append(block_size)
-            blocks = np.product(block_sizes)
+            blocks = np.prod(block_sizes)
             size = math.ceil(self._obj.blocks.sizes[dim] / (ranks // blocks))
             chunk_sizes[dim] = min(size, self._obj.blocks.sizes[dim])
         return chunk_sizes
