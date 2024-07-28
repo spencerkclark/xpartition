@@ -9,7 +9,7 @@ import dask.array
 import numpy as np
 import xarray as xr
 
-__version__ = "0.2.1"
+__version__ = "0.2.2"
 
 
 Region = Union[None, Mapping[Hashable, slice]]
