@@ -5,43 +5,38 @@ on:
   push:
     branches: [main]
 
+env:
+  FORCE_COLOR: 1
+
 jobs:
   pytest:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        python-version: ["3.9"]
+        python-version: ["3.12"]
         os: [ubuntu-latest]
         platform: [x64]
 
     steps:
-    - uses: actions/checkout@v2
-    - name: Setup conda
-      uses: s-weigand/setup-conda@v1
-      with:
-        activate-conda: false
-        conda-channels: conda-forge
-        python-version: ${{ matrix.python-version }}
+    - uses: actions/checkout@v4
 
-    - name: Create conda environment
-      run: |
-        conda env create --file ci/environment.yaml
-        source activate test
-        pip install -v -e . --no-deps
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: "pip" # caching pip dependencies
+    - run: pip install -r ci/requirements.txt 
+
+    - name: Install xpartition
+      run: pip install -v -e . --no-deps
 
     - name: Environment information
-      run: |
-        source activate test
-        conda info --all
-        conda list
+      run: python -m pip list
 
     - name: Run tests
-      run: |
-        source activate test
-        pytest -vv --cov=xpartition --cov-report=xml
+      run: pytest -vv --cov=xpartition --cov-report=xml
 
     - name: Upload code coverage to Codecov
-      uses: codecov/codecov-action@v1
+      uses: codecov/codecov-action@v4
       with:
         file: ./coverage.xml
         flags: unittests,${{ matrix.python-version }}
