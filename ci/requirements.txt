@@ -1,0 +1,6 @@
+coveralls
+dask
+pytest
+pytest-cov
+xarray
+zarr
