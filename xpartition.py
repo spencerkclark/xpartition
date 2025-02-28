@@ -3,7 +3,7 @@ import dataclasses
 import functools
 import logging
 import math
-from typing import Callable, Dict, Hashable, Mapping, Sequence, Tuple, Union
+from typing import Callable, Dict, Hashable, Mapping, Optional, Sequence, Tuple, Union
 
 import dask.array
 import numpy as np
@@ -390,8 +390,37 @@ class PartitionDatasetAccessor:
     def __init__(self, xarray_obj):
         self._obj = xarray_obj
 
-    def initialize_store(self, store: str):
-        self._obj.to_zarr(store, compute=False)
+    def initialize_store(
+        self,
+        store: str,
+        mode: Optional[str] = None,
+        encoding: Optional[dict] = None,
+        zarr_format: Optional[int] = None,
+    ):
+        """Initialize a zarr store for partitioned writes.
+
+        The ``encoding`` and ``zarr_format`` parameters provided here will
+        automatically be applied in the ``write`` step, as they are stored
+        on disk in the initialization process.
+
+        .. note::
+            The ``encoding`` parameters provided here take precedent over
+            the ``encoding`` parameters attached to variables in the Dataset.
+
+        Parameters
+        ----------
+        store : str
+            Path to zarr store.
+        mode : str or None
+            ``mode`` to pass through to :py:meth:`xarray.Dataset.to_zarr`.
+        encoding : dict or None
+            ``encoding`` to pass through to :py:meth:`xarray.Dataset.to_zarr`.
+        zarr_format : int or None
+            ``zarr_format`` to pass through to :py:meth:`xarray.Dataset.to_zarr`.
+        """
+        self._obj.to_zarr(
+            store, compute=False, mode=mode, encoding=encoding, zarr_format=zarr_format
+        )
 
     def write(
         self,
