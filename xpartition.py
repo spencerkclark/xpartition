@@ -394,7 +394,6 @@ class PartitionDatasetAccessor:
         self,
         store: str,
         mode: Optional[str] = None,
-        encoding: Optional[dict] = None,
         zarr_format: Optional[int] = None,
     ):
         """Initialize a zarr store for partitioned writes.
