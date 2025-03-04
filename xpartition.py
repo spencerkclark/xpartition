@@ -3,7 +3,8 @@ import dataclasses
 import functools
 import logging
 import math
-from typing import Callable, Dict, Hashable, Mapping, Sequence, Tuple, Union
+from packaging.version import Version
+from typing import Callable, Dict, Hashable, Mapping, Optional, Sequence, Tuple, Union
 
 import dask.array
 import numpy as np
@@ -391,9 +392,17 @@ class PartitionDatasetAccessor:
         self._obj = xarray_obj
 
     def initialize_store(
-        self, store: str, inner_chunks: Dict[Hashable, int] | None = None
+        self,
+        store: str,
+        inner_chunks: Dict[Hashable, int] | None = None,
+        mode: Optional[str] = None,
+        zarr_format: Optional[int] = None,
     ):
         """Initialize a zarr store for partitioned writes.
+
+        The ``inner_chunks`` and ``zarr_format`` parameters provided here
+        will automatically be applied in the ``write`` step, as they are
+        encoded on disk in the initialization process.
 
         Parameters
         ----------
@@ -405,11 +414,20 @@ class PartitionDatasetAccessor:
             from the dask chunks on the variables in the Dataset. If not
             provided, a standard unsharded zarr store will be written, whose
             chunks will correspond to the dask chunks.
+        mode : str or None
+            ``mode`` to pass through to :py:meth:`xarray.Dataset.to_zarr`.
+        zarr_format : int or None
+            ``zarr_format`` to pass through to :py:meth:`xarray.Dataset.to_zarr`.
         """
         ds = self._obj
         if inner_chunks is not None:
+            if zarr_format == 2:
+                raise ValueError(
+                    "It is not possible to specify inner_chunks when zarr_format=2. "
+                    "Sharded stores are only possible with zarr version 3."
+                )
             ds = set_shards_and_chunks_encoding(ds, inner_chunks)
-        ds.to_zarr(store, compute=False)
+        ds.to_zarr(store, compute=False, mode=mode, zarr_format=zarr_format)
 
     def write(
         self,
