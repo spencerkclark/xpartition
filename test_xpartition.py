@@ -6,6 +6,7 @@ import dask
 import numpy as np
 import pytest
 import xarray as xr
+import zarr
 
 import xpartition
 
@@ -453,3 +454,41 @@ def test_get_unchunked_data_var_names(mixed_ds):
 def test_validate_PartitionMapper_dataset(mixed_ds):
     with pytest.raises(ValueError, match="The PartitionMapper approach"):
         xpartition.validate_PartitionMapper_dataset(mixed_ds)
+
+
+@pytest.mark.parametrize(
+    ("mode", "raises_on_existing"), [(None, True), ("w-", True), ("w", False)]
+)
+def test_mode(tmpdir, ds, mode, raises_on_existing):
+    store = os.path.join(tmpdir, "test.zarr")
+    ds.to_zarr(store)
+
+    if raises_on_existing:
+        with pytest.raises(FileExistsError):
+            ds.partition.initialize_store(store, mode=mode)
+    else:
+        ranks = 3
+        ds.partition.initialize_store(store, mode=mode)
+        for rank in range(ranks):
+            ds.partition.write(store, ranks, ds.dims, rank)
+
+        result = xr.open_zarr(store)
+        xr.testing.assert_identical(result, ds)
+
+
+@pytest.mark.parametrize("zarr_format", [None, 2, 3])
+def test_zarr_format(tmpdir, ds, zarr_format):
+    store = os.path.join(tmpdir, "test.zarr")
+
+    ranks = 3
+    ds.partition.initialize_store(store, zarr_format=zarr_format)
+    for rank in range(ranks):
+        ds.partition.write(store, ranks, ds.dims, rank)
+
+    result = xr.open_zarr(store)
+    xr.testing.assert_identical(result, ds)
+
+    expected_zarr_format = 3 if zarr_format is None else zarr_format
+    group = zarr.open_group(store)
+    result_zarr_format = group.metadata.zarr_format
+    assert result_zarr_format == expected_zarr_format
