@@ -394,7 +394,7 @@ class PartitionDatasetAccessor:
     def initialize_store(
         self,
         store: str,
-        inner_chunks: Dict[Hashable, int] | None = None,
+        inner_chunks: Optional[Dict[Hashable, int]] = None,
         mode: Optional[str] = None,
         zarr_format: Optional[int] = None,
     ):
