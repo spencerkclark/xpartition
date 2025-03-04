@@ -492,33 +492,3 @@ def test_zarr_format(tmpdir, ds, zarr_format):
     group = zarr.open_group(store)
     result_zarr_format = group.metadata.zarr_format
     assert result_zarr_format == expected_zarr_format
-
-
-def test_encoding(tmpdir, ds):
-    ranks = 3
-    compressed_store = os.path.join(tmpdir, "compressed.zarr")
-    ds.partition.initialize_store(compressed_store)
-    for rank in range(ranks):
-        ds.partition.write(compressed_store, ranks, ds.dims, rank)
-
-    # Show that by default zarr compresses all variables
-    compressed_ds = xr.open_zarr(compressed_store)
-    for variable in compressed_ds.variables.values():
-        assert variable.encoding["compressors"] != ()
-
-    # Show that we can override this by providing encoding parameters to
-    # initialize_store. This is true even if variables have existing
-    # compressors specified, as they do here, since we are starting from
-    # compressed_ds.
-    encoding = {}
-    for name, variable in compressed_ds.variables.items():
-        encoding[name] = {"compressors": None}
-
-    uncompressed_store = os.path.join(tmpdir, "uncompressed.zarr")
-    compressed_ds.partition.initialize_store(uncompressed_store, encoding=encoding)
-    for rank in range(ranks):
-        compressed_ds.partition.write(uncompressed_store, ranks, ds.dims, rank)
-
-    result = xr.open_zarr(uncompressed_store)
-    for variable in result.variables.values():
-        assert variable.encoding["compressors"] == ()

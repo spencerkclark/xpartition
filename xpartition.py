@@ -399,13 +399,9 @@ class PartitionDatasetAccessor:
     ):
         """Initialize a zarr store for partitioned writes.
 
-        The ``encoding`` and ``zarr_format`` parameters provided here will
-        automatically be applied in the ``write`` step, as they are stored
-        on disk in the initialization process.
-
-        .. note::
-            The ``encoding`` parameters provided here take precedent over
-            the ``encoding`` parameters attached to variables in the Dataset.
+        The ``zarr_format`` parameter provided here will automatically be
+        applied in the ``write`` step, as it is stored on disk in the
+        initialization process.
 
         Parameters
         ----------
@@ -413,14 +409,10 @@ class PartitionDatasetAccessor:
             Path to zarr store.
         mode : str or None
             ``mode`` to pass through to :py:meth:`xarray.Dataset.to_zarr`.
-        encoding : dict or None
-            ``encoding`` to pass through to :py:meth:`xarray.Dataset.to_zarr`.
         zarr_format : int or None
             ``zarr_format`` to pass through to :py:meth:`xarray.Dataset.to_zarr`.
         """
-        self._obj.to_zarr(
-            store, compute=False, mode=mode, encoding=encoding, zarr_format=zarr_format
-        )
+        self._obj.to_zarr(store, compute=False, mode=mode, zarr_format=zarr_format)
 
     def write(
         self,
