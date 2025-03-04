@@ -3,7 +3,6 @@ import dataclasses
 import functools
 import logging
 import math
-from packaging.version import Version
 from typing import Callable, Dict, Hashable, Mapping, Optional, Sequence, Tuple, Union
 
 import dask.array
