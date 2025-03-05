@@ -20,7 +20,7 @@ from xpartition.xpartition import (
     get_unchunked_non_dimension_coord_names,
     get_unchunked_variable_names,
     unfreeze_indexers,
-    validate_PartitionMapper_dataset
+    validate_PartitionMapper_dataset,
 )
 
 
