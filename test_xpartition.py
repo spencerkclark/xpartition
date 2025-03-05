@@ -10,8 +10,8 @@ import zarr
 
 import xpartition
 
+from xarray_utils import get_chunks_encoding, CountingScheduler
 from xpartition import (
-    get_chunks_encoding,
     get_inner_chunk_size,
     get_inner_chunks_encoding,
 )
@@ -373,20 +373,6 @@ def test_hashability_of_frozen_indexers(a, b):
     assert hash(frozen_indexers_a) == hash(frozen_indexers_b)
 
 
-class CountingScheduler:
-    """Inspired by xarray
-
-    https://github.com/pydata/xarray/blob/33fbb648ac042f821a11870ffa544e5bcb6e178f/xarray/tests/__init__.py#L97-L113
-    """
-
-    def __init__(self):
-        self.total_computes = 0
-
-    def __call__(self, dsk, keys, **kwargs):
-        self.total_computes += 1
-        return dask.get(dsk, keys, **kwargs)
-
-
 @pytest.mark.parametrize(
     ("collect_variable_writes", "expected_computes"), [(False, 9), (True, 3)]
 )
@@ -500,12 +486,24 @@ def test_zarr_format(tmpdir, ds, zarr_format):
     assert result_zarr_format == expected_zarr_format
 
 
-def test_get_chunks_encoding():
+@pytest.mark.parametrize(
+    ("chunks", "expected", "raises", "match"),
+    [
+        ({"a": 2, "b": 4}, (2, 4), False, None),
+        ({"a": 2, "b": (1, 2, 2)}, None, True, "uniform chunk"),
+        ({"a": 2, "b": (1, 1, 3)}, None, True, "Final chunk"),
+    ],
+    ids=lambda x: f"{x!r}",
+)
+def test_get_chunks_encoding(chunks, expected, raises, match):
     da = xr.DataArray(np.arange(10).reshape((2, 5)), dims=["a", "b"])
-    da = da.chunk({"a": 2, "b": 4})
-    result = get_chunks_encoding(da)
-    expected = (2, 4)
-    assert result == expected
+    da = da.chunk(chunks)
+    if raises:
+        with pytest.raises(ValueError, match=match):
+            get_chunks_encoding(da)
+    else:
+        result = get_chunks_encoding(da)
+        assert result == expected
 
 
 @pytest.mark.parametrize(

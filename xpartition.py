@@ -9,6 +9,8 @@ import dask.array
 import numpy as np
 import xarray as xr
 
+from xarray_utils import get_chunks_encoding
+
 __version__ = "0.2.2"
 
 
@@ -652,10 +654,6 @@ class PartitionMapper:
     def __iter__(self):
         self._initialize_store()
         return iter(range(len(self.plan.input_partition)))
-
-
-def get_chunks_encoding(da: xr.DataArray) -> Tuple[int, ...]:
-    return tuple(chunk_size for chunk_size, *_ in da.chunks)
 
 
 def get_inner_chunk_size(
