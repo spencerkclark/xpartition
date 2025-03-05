@@ -9,7 +9,7 @@ import dask.array
 import numpy as np
 import xarray as xr
 
-from xarray_utils import get_chunks_encoding
+from xpartition.xarray_utils import get_chunks_encoding
 
 __version__ = "0.2.2"
 

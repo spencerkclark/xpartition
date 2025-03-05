@@ -10,10 +10,17 @@ import zarr
 
 import xpartition
 
-from xarray_utils import get_chunks_encoding, CountingScheduler
-from xpartition import (
+from xpartition.xarray_utils import get_chunks_encoding, CountingScheduler
+from xpartition.xpartition import (
+    _zeros_like_dataarray,
+    freeze_indexers,
     get_inner_chunk_size,
     get_inner_chunks_encoding,
+    get_unchunked_data_var_names,
+    get_unchunked_non_dimension_coord_names,
+    get_unchunked_variable_names,
+    unfreeze_indexers,
+    validate_PartitionMapper_dataset,
 )
 
 
@@ -174,7 +181,7 @@ def checkpoint_modification_times(store, variables):
 @pytest.mark.parametrize("ranks", [1, 2, 3, 5, 10, 11])
 @pytest.mark.parametrize("collect_variable_writes", [False, True])
 def test_dataset_mappable_write(tmpdir, ds, ranks, collect_variable_writes):
-    unchunked_variables = xpartition.get_unchunked_variable_names(ds)
+    unchunked_variables = get_unchunked_variable_names(ds)
 
     store = os.path.join(tmpdir, "test.zarr")
     ds.partition.initialize_store(store)
@@ -224,7 +231,7 @@ def test_PartitionMapper_integration(
         chunked_coord = xr.DataArray(range(5), dims=["x"]).chunk({"x": 5})
         ds = ds.assign_coords(b=chunked_coord)
 
-    unchunked_variables = xpartition.get_unchunked_variable_names(ds)
+    unchunked_variables = get_unchunked_variable_names(ds)
 
     store = str(tmpdir)
     mapper = ds.z.partition.map(store, ranks=3, dims=["x"], func=func, data=ds)
@@ -291,7 +298,7 @@ def test__zeros_like_dataarray(
     da = xr.DataArray(np.zeros((10, 6), dtype=dtype), dims=["x", "y"]).chunk(
         original_chunks
     )
-    result = xpartition._zeros_like_dataarray(da, override_chunks)
+    result = _zeros_like_dataarray(da, override_chunks)
     result_chunks = result.chunks
     assert result_chunks == expected_chunks
     assert result.dtype == da.dtype
@@ -348,8 +355,8 @@ def test_partition_indexers_invalid_rank_error():
     ids=lambda x: f"{x}",
 )
 def test_freeze_unfreeze_indexers(unfrozen_indexers, frozen_indexers):
-    assert xpartition.freeze_indexers(unfrozen_indexers) == frozen_indexers
-    assert xpartition.unfreeze_indexers(frozen_indexers) == unfrozen_indexers
+    assert freeze_indexers(unfrozen_indexers) == frozen_indexers
+    assert unfreeze_indexers(frozen_indexers) == unfrozen_indexers
 
 
 @pytest.mark.parametrize(
@@ -365,8 +372,8 @@ def test_freeze_unfreeze_indexers(unfrozen_indexers, frozen_indexers):
 )
 def test_hashability_of_frozen_indexers(a, b):
     assert a == b
-    frozen_indexers_a = xpartition.freeze_indexers(a)
-    frozen_indexers_b = xpartition.freeze_indexers(b)
+    frozen_indexers_a = freeze_indexers(a)
+    frozen_indexers_b = freeze_indexers(b)
 
     # Despite having different key orders, the hashes of the frozen indexers
     # should be equal.
@@ -427,25 +434,25 @@ def mixed_ds():
 
 def test_get_unchunked_variable_names(mixed_ds):
     expected = {"x_unchunked", "y_unchunked", "data_var_unchunked", "coord_unchunked"}
-    result = set(xpartition.get_unchunked_variable_names(mixed_ds))
+    result = set(get_unchunked_variable_names(mixed_ds))
     assert result == expected
 
 
 def test_get_unchunked_non_dimension_coord_names(mixed_ds):
     expected = {"coord_unchunked"}
-    result = set(xpartition.get_unchunked_non_dimension_coord_names(mixed_ds))
+    result = set(get_unchunked_non_dimension_coord_names(mixed_ds))
     assert result == expected
 
 
 def test_get_unchunked_data_var_names(mixed_ds):
     expected = {"data_var_unchunked"}
-    result = set(xpartition.get_unchunked_data_var_names(mixed_ds))
+    result = set(get_unchunked_data_var_names(mixed_ds))
     assert result == expected
 
 
 def test_validate_PartitionMapper_dataset(mixed_ds):
     with pytest.raises(ValueError, match="The PartitionMapper approach"):
-        xpartition.validate_PartitionMapper_dataset(mixed_ds)
+        validate_PartitionMapper_dataset(mixed_ds)
 
 
 @pytest.mark.parametrize(
