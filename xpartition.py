@@ -9,6 +9,8 @@ import dask.array
 import numpy as np
 import xarray as xr
 
+from xarray_utils import get_chunks_encoding
+
 __version__ = "0.2.2"
 
 
@@ -393,25 +395,40 @@ class PartitionDatasetAccessor:
     def initialize_store(
         self,
         store: str,
+        inner_chunks: Optional[Dict[Hashable, int]] = None,
         mode: Optional[str] = None,
         zarr_format: Optional[int] = None,
     ):
         """Initialize a zarr store for partitioned writes.
 
-        The ``zarr_format`` parameter provided here will automatically be
-        applied in the ``write`` step, as it is stored on disk in the
-        initialization process.
+        The ``inner_chunks`` and ``zarr_format`` parameters provided here
+        will automatically be applied in the ``write`` step, as they are
+        encoded on disk in the initialization process.
 
         Parameters
         ----------
         store : str
             Path to zarr store.
+        inner_chunks : dict (optional)
+            Dictionary mapping dimension names to inner chunk sizes for writing
+            a sharded zarr store. Outer chunks (a.k.a. shards) will be inferred
+            from the dask chunks on the variables in the Dataset. If not
+            provided, a standard unsharded zarr store will be written, whose
+            chunks will correspond to the dask chunks.
         mode : str or None
             ``mode`` to pass through to :py:meth:`xarray.Dataset.to_zarr`.
         zarr_format : int or None
             ``zarr_format`` to pass through to :py:meth:`xarray.Dataset.to_zarr`.
         """
-        self._obj.to_zarr(store, compute=False, mode=mode, zarr_format=zarr_format)
+        ds = self._obj
+        if inner_chunks is not None:
+            if zarr_format == 2:
+                raise ValueError(
+                    "It is not possible to specify inner_chunks when zarr_format=2. "
+                    "Sharded stores are only possible with zarr version 3."
+                )
+            ds = set_shards_and_chunks_encoding(ds, inner_chunks)
+        ds.to_zarr(store, compute=False, mode=mode, zarr_format=zarr_format)
 
     def write(
         self,
@@ -637,3 +654,52 @@ class PartitionMapper:
     def __iter__(self):
         self._initialize_store()
         return iter(range(len(self.plan.input_partition)))
+
+
+def get_inner_chunk_size(
+    inner_chunks: Dict[Hashable, int], dim_sizes: Dict[Hashable, int], dim: Hashable
+) -> int:
+    chunk_size = inner_chunks.get(dim, dim_sizes[dim])
+
+    if chunk_size > 0 or chunk_size == -1:
+        chunk_size = chunk_size if chunk_size > 0 else dim_sizes[dim]
+    else:
+        raise ValueError(
+            f"Inner chunk size must be greater than 0 or be equal to -1; got chunk "
+            f"size {chunk_size} along dim {dim!r}."
+        )
+    return chunk_size
+
+
+def get_inner_chunks_encoding(
+    da: xr.DataArray, inner_chunks: Dict[Hashable, int]
+) -> Tuple[int, ...]:
+    shards = dict(zip(da.dims, get_chunks_encoding(da)))
+
+    chunks = []
+    for dim in da.dims:
+        chunk_size = get_inner_chunk_size(inner_chunks, da.sizes, dim)
+        if shards[dim] % chunk_size == 0:
+            chunks.append(chunk_size)
+        else:
+            raise ValueError(
+                f"Inner chunk size ({chunk_size}) for dimension {dim!r} does not "
+                f"evenly divide shard size ({shards[dim]}) for DataArray "
+                f"{da.name!r}."
+            )
+    return tuple(chunks)
+
+
+def set_shards_and_chunks_encoding(
+    ds: xr.Dataset, inner_chunks: Dict[Hashable, int]
+) -> xr.Dataset:
+    # Make a shallow copy to avoid mutating the encoding of the input dataset.
+    ds = ds.copy(deep=False)
+
+    for da in {**ds.coords, **ds.data_vars}.values():
+        if isinstance(da.data, dask.array.Array):
+            shards = get_chunks_encoding(da)
+            chunks = get_inner_chunks_encoding(da, inner_chunks)
+            da.encoding["shards"] = shards
+            da.encoding["chunks"] = chunks
+    return ds

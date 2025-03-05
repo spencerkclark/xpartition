@@ -10,6 +10,12 @@ import zarr
 
 import xpartition
 
+from xarray_utils import get_chunks_encoding, CountingScheduler
+from xpartition import (
+    get_inner_chunk_size,
+    get_inner_chunks_encoding,
+)
+
 
 @pytest.mark.parametrize(
     ("block_indexers", "expected", "exception"),
@@ -367,20 +373,6 @@ def test_hashability_of_frozen_indexers(a, b):
     assert hash(frozen_indexers_a) == hash(frozen_indexers_b)
 
 
-class CountingScheduler:
-    """Inspired by xarray
-
-    https://github.com/pydata/xarray/blob/33fbb648ac042f821a11870ffa544e5bcb6e178f/xarray/tests/__init__.py#L97-L113
-    """
-
-    def __init__(self):
-        self.total_computes = 0
-
-    def __call__(self, dsk, keys, **kwargs):
-        self.total_computes += 1
-        return dask.get(dsk, keys, **kwargs)
-
-
 @pytest.mark.parametrize(
     ("collect_variable_writes", "expected_computes"), [(False, 9), (True, 3)]
 )
@@ -492,3 +484,112 @@ def test_zarr_format(tmpdir, ds, zarr_format):
     group = zarr.open_group(store)
     result_zarr_format = group.metadata.zarr_format
     assert result_zarr_format == expected_zarr_format
+
+
+@pytest.mark.parametrize(
+    ("chunks", "expected", "raises", "match"),
+    [
+        ({"a": 2, "b": 4}, (2, 4), False, None),
+        ({"a": 2, "b": (1, 2, 2)}, None, True, "uniform chunk"),
+        ({"a": 2, "b": (1, 1, 3)}, None, True, "Final chunk"),
+    ],
+    ids=lambda x: f"{x!r}",
+)
+def test_get_chunks_encoding(chunks, expected, raises, match):
+    da = xr.DataArray(np.arange(10).reshape((2, 5)), dims=["a", "b"])
+    da = da.chunk(chunks)
+    if raises:
+        with pytest.raises(ValueError, match=match):
+            get_chunks_encoding(da)
+    else:
+        result = get_chunks_encoding(da)
+        assert result == expected
+
+
+@pytest.mark.parametrize(
+    ("inner_chunks", "dim_sizes", "dim", "expected", "raises"),
+    [
+        ({"a": 1}, {"a": 2}, "a", 1, False),
+        ({"a": -1}, {"a": 2}, "a", 2, False),
+        ({"a": -2}, {"a": 2}, "a", None, True),
+    ],
+    ids=lambda x: f"{x!r}",
+)
+def test_get_inner_chunk_size(inner_chunks, dim_sizes, dim, expected, raises):
+    if raises:
+        with pytest.raises(ValueError, match="greater than 0"):
+            get_inner_chunk_size(inner_chunks, dim_sizes, dim)
+    else:
+        result = get_inner_chunk_size(inner_chunks, dim_sizes, dim)
+        assert result == expected
+
+
+@pytest.mark.parametrize(
+    ("inner_chunks", "raises"),
+    [({"a": 1}, False), ({"a": 2}, True)],
+    ids=lambda x: f"{x!r}",
+)
+def test_get_inner_chunks_encoding(inner_chunks, raises):
+    da = xr.DataArray(np.arange(5), dims=["a"]).chunk({"a": 3})
+    if raises:
+        with pytest.raises(ValueError, match="evenly divide"):
+            get_inner_chunks_encoding(da, inner_chunks)
+    else:
+        expected = (1,)
+        result = get_inner_chunks_encoding(da, inner_chunks)
+        assert result == expected
+
+
+def test_sharded_store(tmpdir, ds):
+    inner_chunks = {"a": 1, "b": 1, "c": 1}
+    store = os.path.join(tmpdir, "sharded.zarr")
+
+    ranks = 3
+    ds.partition.initialize_store(store, inner_chunks=inner_chunks)
+    for rank in range(ranks):
+        ds.partition.write(store, ranks, ds.dims, rank)
+
+    # Check that initialize_store and write do not mutate the encoding of
+    # any of the variables in the original Dataset.
+    for da in {**ds.coords, **ds.data_vars}.values():
+        assert "shards" not in da.encoding
+        assert "chunks" not in da.encoding
+
+    # Check that the chunks and encoding of the loaded Dataset match our
+    # expectations.
+    result = xr.open_zarr(store)
+    for name, original_da in {**ds.coords, **ds.data_vars}.items():
+        result_da = result[name]
+
+        if isinstance(result_da.data, dask.array.Array):
+            stored_chunks = {}
+            for dim, (size, *_) in zip(result_da.dims, result_da.chunks):
+                stored_chunks[dim] = size
+
+            if isinstance(original_da.data, dask.array.Array):
+                expected_chunks = {dim: inner_chunks[dim] for dim in stored_chunks}
+                expected_shards_encoding = get_chunks_encoding(ds[name])
+                expected_chunks_encoding = get_chunks_encoding(result_da)
+            else:
+                expected_chunks = result_da.sizes
+                expected_shards_encoding = None
+                expected_chunks_encoding = get_chunks_encoding(result_da)
+
+            assert stored_chunks == expected_chunks
+            assert result_da.encoding["shards"] == expected_shards_encoding
+            assert result_da.encoding["chunks"] == expected_chunks_encoding
+
+    # Finally check that the written Dataset, modulo chunks, is identical
+    # to the provided Dataset.
+    xr.testing.assert_identical(result, ds)
+
+
+def test_inner_chunks_zarr_format_2_error(tmpdir, ds):
+    inner_chunks = {"a": 1, "b": 1, "c": 1}
+    zarr_format = 2
+    store = os.path.join(tmpdir, "sharded.zarr")
+
+    with pytest.raises(ValueError, match="zarr_format=2"):
+        ds.partition.initialize_store(
+            store, inner_chunks=inner_chunks, zarr_format=zarr_format
+        )
