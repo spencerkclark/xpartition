@@ -1,0 +1,4 @@
+.eggs/
+.tox/
+__pycache__/
+xpartition.egg-info/
