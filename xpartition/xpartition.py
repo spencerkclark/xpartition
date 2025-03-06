@@ -11,7 +11,7 @@ import xarray as xr
 
 from xpartition.xarray_utils import get_chunks_encoding
 
-__version__ = "0.2.2"
+__version__ = "2025.03.0"
 
 
 Region = Union[None, Mapping[Hashable, slice]]
