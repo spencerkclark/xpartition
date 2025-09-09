@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=38.4", "setuptools_scm"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "xpartition"
 authors = [{name = "Spencer Clark", email = "spencerkclark@gmail.com"}]
@@ -19,10 +23,6 @@ dynamic = ["version"]
 [project.readme]
 file = "README.md"
 content-type = "text/markdown"
-
-[build-system]
-requires = ["setuptools>=38.4", "setuptools_scm"]
-build-backend = "setuptools.build_meta"
 
 [project.urls]
 Repository = "https://github.com/spencerkclark/xpartition.git"
