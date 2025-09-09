@@ -27,18 +27,17 @@ content-type = "text/markdown"
 [project.urls]
 Repository = "https://github.com/spencerkclark/xpartition.git"
 
-[tool.flake8]
-ignore = [	
-    "E203",
-	"E402",
-	"E501",
-	"E731",
-	"W503"
-]
+[tool.ruff]
 exclude = [
     ".eggs",
     "doc",
     "__init__.py"
+]
+
+[tool.ruff.lint]
+ignore = [	
+	"E731",
+	"F401"
 ]
 
 [tool.setuptools]
